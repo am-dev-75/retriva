@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 class Settings(BaseSettings):
-    mirror_base_path: str = "./mirror"
+    mirror_base_path: str = str((Path(__file__).resolve().parent / "mirror").resolve())
     canonical_base_url: str = "https://wiki.dave.eu"
     
     qdrant_url: str = "http://192.168.1.64:6333"
@@ -47,7 +48,11 @@ class Settings(BaseSettings):
     # Retrieving stuff
     top_k: int = 200
     
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str((Path(__file__).resolve().parents[2] / ".env").resolve()), 
+        env_file_encoding="utf-8", 
+        extra="ignore"
+    )
 
     def model_post_init(self, __context) -> None:
         """Fall back per-service API keys to the shared openrouter key."""

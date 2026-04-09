@@ -1,0 +1,182 @@
+openapi: 3.1.0
+info:
+  title: Retriva Modular Injection API
+  description: REST API for injecting documents and pre-processed chunks into the Retriva RAG pipeline.
+  version: "0.3.0"
+servers:
+  - url: /api/v1
+paths:
+  /ingest/html:
+    post:
+      summary: Ingest an HTML document
+      description: Parses HTML, extracts main content, chunks it according to specifications, and indexes it in Qdrant.
+      operationId: ingestHtml
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HtmlIngestRequest'
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+        '400':
+          description: Bad request (e.g., malformed HTML)
+        '500':
+          description: Internal server error
+  /ingest/text:
+    post:
+      summary: Ingest plain text
+      description: Chunks plain text according to the character limit and overlap settings, then indexes it in Qdrant.
+      operationId: ingestText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextIngestRequest'
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /ingest/chunks:
+    post:
+      summary: Ingest pre-processed chunks
+      description: Injects completely pre-processed and metadata-enriched text chunks directly into Qdrant, bypassing the chunker.
+      operationId: ingestChunks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChunkIngestRequest'
+      responses:
+        '202':
+          description: Chunks accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+        '400':
+          description: Bad request (e.g., schema validation failed)
+        '500':
+          description: Internal server error
+  /ingest/collection:
+    delete:
+      summary: Clear the collection
+      description: Deletes the existing chunk collection and re-initializes it, effectively wiping all indexed data.
+      operationId: clearCollection
+      responses:
+        '200':
+          description: Collection cleared and re-initialized
+        '500':
+          description: Internal server error
+components:
+  schemas:
+    HtmlIngestRequest:
+      type: object
+      required:
+        - source_path
+        - html_content
+      properties:
+        source_path:
+          type: string
+          description: The canonical URL or source path of the HTML document.
+          example: "https://wiki.dave.eu/index.html"
+        page_title:
+          type: string
+          description: The title of the page.
+          example: "Main Page"
+        html_content:
+          type: string
+          description: Raw HTML content to be parsed.
+    TextIngestRequest:
+      type: object
+      required:
+        - source_path
+        - content_text
+      properties:
+        source_path:
+          type: string
+          description: Unique source path or URL of the text resource.
+        page_title:
+          type: string
+          description: Optional title of the text resource.
+        content_text:
+          type: string
+          description: Plain text content to be chunked.
+    ChunkIngestRequest:
+      type: object
+      required:
+        - chunks
+      properties:
+        chunks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chunk'
+          description: List of Chunk objects to index into Qdrant.
+    Chunk:
+      type: object
+      required:
+        - text
+        - metadata
+      properties:
+        text:
+          type: string
+          description: The actual text content for the chunk.
+        metadata:
+          $ref: '#/components/schemas/ChunkMetadata'
+    ChunkMetadata:
+      type: object
+      required:
+        - doc_id
+        - source_path
+        - page_title
+        - section_path
+        - chunk_id
+        - chunk_index
+      properties:
+        doc_id:
+          type: string
+          description: The canonical document ID.
+        source_path:
+          type: string
+          description: Origin path or URL.
+        page_title:
+          type: string
+          description: Document title.
+        section_path:
+          type: string
+          description: Path to the specific section of the document.
+        chunk_id:
+          type: string
+          description: Unique chunk ID (usually an MD5 hash).
+        chunk_index:
+          type: integer
+          description: Sequential index of the chunk.
+        chunk_type:
+          type: string
+          default: "text"
+        language:
+          type: string
+          default: "en"
+    IngestResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "accepted"
+        message:
+          type: string
+          example: "Processing started successfully"

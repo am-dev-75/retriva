@@ -37,7 +37,9 @@ def discover_html_files() -> List[str]:
     Excludes images/ and resources/ directories.
     Handles extensionless wiki pages by sniffing content.
     """
+    logger.debug(f"Mirror base path: {settings.mirror_base_path}")    
     base = Path(settings.mirror_base_path).resolve()
+    logger.debug(f"Base path: {base}")
     if not base.exists() or not base.is_dir():
         logger.warning(f"Mirror base path '{base}' does not exist or is not a directory.")
         return []
