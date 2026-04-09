@@ -1,0 +1,11 @@
+{
+    "python.defaultInterpreterPath": "/home/llandre/.venvs/retriva-v0.1/bin/python",
+    "python.venvPath": "/home/llandre/.venvs",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.env.linux": {
+        "VIRTUAL_ENV": "/home/llandre/.venvs/retriva-v0.1",
+        "PATH": "/home/llandre/.venvs/retriva-v0.1/bin:${env:PATH}",
+        "PYTHONPATH": "${workspaceFolder}/src"
+    },
+    "python.terminal.useEnvFile": true
+}
