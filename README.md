@@ -1,4 +1,4 @@
-# Retriva — Implementation #1 - v0.1
+# Retriva
 
 See https://github.com/am-dev-75/retriva-docs.
 
