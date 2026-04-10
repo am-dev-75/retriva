@@ -21,7 +21,7 @@ Retriva is built around a RAG (Retrieval-Augmented Generation) paradigm, current
 - **QA Pipeline (`qa/`)**: Drives the retrieval and generation phases. It queries Qdrant for semantic similarity, retrieves contextual chunks, and generates grounded answers based strictly on the retrieved data.
 - **User Interface (`ui/`)**: A Streamlit-based frontend offering a conversational chat experience. It supports grounded answers, citations, and features an integrated debug panel to visualize the retrieval process.
 
-The final architecture should look like ![this](docs/assets/Retriva_final_architecture.drawio.png).
+The final architecture should look like ![this:](docs/assets/Retriva_final_architecture.drawio.png)
 
 ## Licensing
 
