@@ -30,7 +30,7 @@ def test_ingest_text(mock_upsert_chunks):
     assert len(chunks) == 1
     assert chunks[0].text == "This is a simple plain text injection test."
 
-@patch("retriva.ingestion_api.routers.ingest.upsert_chunks")
+@patch("retriva.ingestion_api.routers.ingest_HTML.upsert_chunks")
 def test_ingest_html(mock_upsert_chunks):
     payload = {
         "source_path": "test://html",

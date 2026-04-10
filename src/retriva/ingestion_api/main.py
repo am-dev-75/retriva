@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from retriva.ingestion_api.routers import ingest
+from retriva.ingestion_api.routers import ingest, ingest_HTML
 from retriva.indexing.qdrant_store import init_collection, get_client
 from retriva.logger import get_logger
 
@@ -29,3 +29,4 @@ app = FastAPI(
 )
 
 app.include_router(ingest.router)
+app.include_router(ingest_HTML.router)
