@@ -8,11 +8,17 @@ class HtmlIngestRequest(BaseModel):
     source_path: str = Field(..., description="Canonical URL or source path.")
     page_title: str = Field("", description="Title of the page.")
     html_content: str = Field(..., description="Raw HTML content.")
+    origin_file_path: str = Field("", description="Original filesystem path of the HTML file (for resolving relative image paths).")
 
 class TextIngestRequest(BaseModel):
     source_path: str = Field(..., description="Canonical URL or source path.")
     page_title: str = Field("", description="Title of the page.")
     content_text: str = Field(..., description="Plain text to chunk.")
+
+class ImageIngestRequest(BaseModel):
+    source_path: str = Field(..., description="Canonical URL or source path.")
+    page_title: str = Field("", description="Title of the page.")
+    file_path: str = Field(..., description="Absolute path to the image file on disk.")
 
 class ChunkIngestRequest(BaseModel):
     chunks: List[Chunk] = Field(..., description="List of completely raw Chunk objects.")

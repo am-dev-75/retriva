@@ -30,12 +30,14 @@ def test_ingest_text(mock_upsert_chunks):
     assert len(chunks) == 1
     assert chunks[0].text == "This is a simple plain text injection test."
 
+@patch("retriva.ingestion_api.routers.ingest_HTML.enrich_images_with_vlm")
 @patch("retriva.ingestion_api.routers.ingest_HTML.upsert_chunks")
-def test_ingest_html(mock_upsert_chunks):
+def test_ingest_html_with_image(mock_upsert_chunks, mock_vlm_enrich):
     payload = {
         "source_path": "test://html",
         "page_title": "Test HTML",
-        "html_content": "<html><body><main>Extract this content</main></body></html>"
+        "html_content": "<html><body><main>Extract this content<figure><img src='test.jpg' alt='Test image'/><figcaption>Caption text</figcaption></figure></main></body></html>",
+        "origin_file_path": "/tmp/test.html"
     }
     
     with TestClient(app) as client:
@@ -43,9 +45,41 @@ def test_ingest_html(mock_upsert_chunks):
     
     assert response.status_code == 202
     assert mock_upsert_chunks.called
+    assert mock_vlm_enrich.called
+    
+    chunks = mock_upsert_chunks.call_args[0][1]
+    assert len(chunks) == 2
+    
+    text_chunks = [c for c in chunks if c.metadata.chunk_type == "text"]
+    assert len(text_chunks) == 1
+    assert "Extract this content" in text_chunks[0].text
+    
+    img_chunks = [c for c in chunks if c.metadata.chunk_type == "image"]
+    assert len(img_chunks) == 1
+    assert "Image: test.jpg" in img_chunks[0].text
+    assert img_chunks[0].metadata.image_path == "test.jpg"
+
+@patch("retriva.ingestion_api.routers.ingest_image.describe_image")
+@patch("retriva.ingestion_api.routers.ingest_image.upsert_chunks")
+def test_ingest_standalone_image(mock_upsert_chunks, mock_describe):
+    mock_describe.return_value = "A detailed schematic showing pin connections."
+    
+    payload = {
+        "source_path": "/images/schematic.png",
+        "page_title": "schematic",
+        "file_path": "/tmp/schematic.png"
+    }
+    
+    with TestClient(app) as client:
+        response = client.post("/api/v1/ingest/image", json=payload)
+    
+    assert response.status_code == 202
+    assert mock_upsert_chunks.called
+    
     chunks = mock_upsert_chunks.call_args[0][1]
     assert len(chunks) == 1
-    assert chunks[0].text == "Extract this content"
+    assert chunks[0].metadata.chunk_type == "image"
+    assert "Description: A detailed schematic showing pin connections." in chunks[0].text
 
 @patch("retriva.ingestion_api.routers.ingest.upsert_chunks")
 def test_ingest_chunks(mock_upsert_chunks):

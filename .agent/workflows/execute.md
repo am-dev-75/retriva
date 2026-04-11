@@ -1,1 +1,3 @@
-# /execute workflow for v0.3
+# /execute — Image Injection Implementation
+
+Implement only approved v0.2 image injection tasks.

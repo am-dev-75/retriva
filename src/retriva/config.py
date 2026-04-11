@@ -16,6 +16,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+VERSION = "0.6.0-rc0"
+
 class Settings(BaseSettings):
     mirror_base_path: str = str((Path(__file__).resolve().parent / "mirror").resolve())
     canonical_base_url: str = "https://wiki.dave.eu"
@@ -30,10 +32,12 @@ class Settings(BaseSettings):
     embedding_dimension: int = 1024
     embedding_openai_api_key: Optional[str] = None
 
-    # Image model
-    image_base_url: str = "https://openrouter.ai/api/v1"
-    image_model: str = "qwen/qwen3-vl-32b-instruct"
-    image_openai_api_key: Optional[str] = None
+    # Visual model
+    visual_base_url: str = "https://openrouter.ai/api/v1"
+    visual_model: str = "qwen/qwen3-vl-32b-instruct"
+    visual_openai_api_key: Optional[str] = None
+    visual_max_tokens: int = 2048
+    visual_temperature: float = 0.0
     
     # Chat model
     chat_base_url: str = "https://openrouter.ai/api/v1"
@@ -58,8 +62,8 @@ class Settings(BaseSettings):
         """Fall back per-service API keys to the shared openrouter key."""
         if not self.embedding_openai_api_key:
             self.embedding_openai_api_key = self.openrouter_openai_api_key
-        if not self.image_openai_api_key:
-            self.image_openai_api_key = self.openrouter_openai_api_key
+        if not self.visual_openai_api_key:
+            self.visual_openai_api_key = self.openrouter_openai_api_key
         if not self.chat_openai_api_key:
             self.chat_openai_api_key = self.openrouter_openai_api_key
 

@@ -66,6 +66,46 @@ def recursive_split_text(text: str, max_chars: int, overlap: int) -> List[str]:
     chunks.extend(recursive_split_text(right, max_chars, actual_overlap))
     return chunks
 
+def create_image_chunks(document: ParsedDocument) -> List[Chunk]:
+    """
+    Creates chunks from the extracted images for dense retrieval formatting.
+    If VLM description is available, it becomes the primary text content.
+    """
+    chunks = []
+    for idx, img in enumerate(document.images):
+        if img.vlm_description:
+            # VLM-enriched: use the detailed description as primary content
+            text_parts = [f"Image: {img.src}"]
+            if img.alt: text_parts.append(f"Alt text: {img.alt}")
+            if img.caption: text_parts.append(f"Caption: {img.caption}")
+            text_parts.append(f"Description: {img.vlm_description}")
+        else:
+            # Fallback: HTML metadata only
+            text_parts = [f"Image: {img.src}"]
+            if img.alt: text_parts.append(f"Alt text: {img.alt}")
+            if img.caption: text_parts.append(f"Caption: {img.caption}")
+            if img.surrounding_text: text_parts.append(f"Context: {img.surrounding_text}")
+        
+        text = "\n".join(text_parts)
+        
+        chunk_id = hashlib.md5(f"{document.canonical_doc_id}_img_{idx}".encode("utf-8")).hexdigest()
+        meta = ChunkMetadata(
+            doc_id=document.canonical_doc_id,
+            source_path=document.source_path,
+            page_title=document.page_title,
+            section_path="", 
+            chunk_id=chunk_id,
+            chunk_index=idx,
+            chunk_type="image",
+            language="en",
+            image_path=img.src
+        )
+        
+        chunks.append(Chunk(text=text, metadata=meta))
+    
+    logger.debug(f"Created {len(chunks)} image chunks.")
+    return chunks
+
 def create_chunks(document: ParsedDocument) -> List[Chunk]:
     """
     Splits the parsed document text into chunks under the character limit.
@@ -98,6 +138,9 @@ def create_chunks(document: ParsedDocument) -> List[Chunk]:
         
         chunk = Chunk(text=text, metadata=meta)
         chunks.append(chunk)
+        
+    image_chunks = create_image_chunks(document)
+    chunks.extend(image_chunks)
         
     document.chunks = chunks
     return chunks

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 
 class ChunkMetadata(BaseModel):
     doc_id: str
@@ -24,10 +24,18 @@ class ChunkMetadata(BaseModel):
     chunk_index: int
     chunk_type: str = "text"
     language: str = "en"
+    image_path: Optional[str] = None
 
 class Chunk(BaseModel):
     text: str
     metadata: ChunkMetadata
+
+class ImageContext(BaseModel):
+    src: str
+    alt: str
+    caption: str
+    surrounding_text: str
+    vlm_description: str = ""
 
 class ParsedDocument(BaseModel):
     source_path: str
@@ -35,3 +43,4 @@ class ParsedDocument(BaseModel):
     page_title: str
     content_text: str
     chunks: List[Chunk] = Field(default_factory=list)
+    images: List[ImageContext] = Field(default_factory=list)

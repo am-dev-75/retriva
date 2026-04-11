@@ -3,6 +3,7 @@
 from fastapi import APIRouter, BackgroundTasks, status
 from retriva.ingestion_api.schemas import HtmlIngestRequest, IngestResponse
 from retriva.ingestion.html_parser import extract_main_content
+from retriva.ingestion.image_parser import extract_images_from_html, enrich_images_with_vlm
 from retriva.ingestion.chunker import create_chunks
 from retriva.domain.models import ParsedDocument
 from retriva.indexing.qdrant_store import get_client, upsert_chunks
@@ -12,16 +13,23 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
 def process_html_in_background(payload: HtmlIngestRequest):
+    images = extract_images_from_html(payload.html_content)
+
+    # Enrich images with VLM descriptions (requires origin file path)
+    enrich_images_with_vlm(images, payload.origin_file_path)
+
     content = extract_main_content(payload.html_content)
-    if not content:
-        logger.warning(f"Failed to extract content from {payload.source_path}")
+    
+    if not content and not images:
+        logger.warning(f"Failed to extract content and images from {payload.source_path}")
         return
         
     doc = ParsedDocument(
         source_path=payload.source_path,
         canonical_doc_id=payload.source_path,
         page_title=payload.page_title,
-        content_text=content
+        content_text=content or "",
+        images=images
     )
     chunks = create_chunks(doc)
     client = get_client()

@@ -3,10 +3,12 @@
 import uvicorn
 import argparse
 from retriva.logger import setup_logging
+from retriva import config
 
 def main():
     setup_logging()
-    parser = argparse.ArgumentParser(description="Retriva API Server")
+    print(f"##### Retriva RAG backend ({config.VERSION}) #####\n")
+    parser = argparse.ArgumentParser(description="Retriva RAG backend")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Binding host")
     parser.add_argument("--port", type=int, default=8000, help="Binding port")
     args = parser.parse_args()
