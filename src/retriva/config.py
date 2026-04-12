@@ -57,8 +57,11 @@ class Settings(BaseSettings):
     # OpenAI-compatible API (for Open WebUI)
     openai_api_port: int = 8001
 
-    # Modular Injection API
+    # Legacy Injection API
     ingestion_api_port: int = 8000
+    
+    # User Interface
+    ui_port: int = 3000
     
     model_config = SettingsConfigDict(
         env_file=str((Path(__file__).resolve().parents[2] / ".env").resolve()), 
