@@ -55,3 +55,45 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
         "retrieved_chunks": chunks,
         "grounding": grounding
     }
+
+
+def ask_question_streaming(question: str, retriever_top_k: int = 5):
+    """
+    Streaming variant of ask_question().
+
+    Returns (chunks, content_generator) where:
+    - chunks: list of retrieved context chunks (for citation building)
+    - content_generator: iterator yielding content strings from the LLM stream
+
+    Note: grounding validation is skipped in streaming mode because it
+    requires the full answer text.
+    """
+    logger.info(f"Processing question (streaming): {question}")
+    chunks = retrieve_top_chunks(question, retriever_top_k=retriever_top_k)
+    logger.info(f"Retrieved {len(chunks)} chunks for context.")
+
+    system_prompt = build_prompt(question, chunks)
+
+    logger.debug(f"Connecting to chat model (streaming) ({settings.chat_base_url})...")
+    client = OpenAI(
+        api_key=settings.chat_openai_api_key,
+        base_url=settings.chat_base_url,
+    )
+
+    stream = client.chat.completions.create(
+        model=settings.chat_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ],
+        temperature=settings.chat_temperature,
+        top_p=settings.chat_top_p,
+        stream=True,
+    )
+
+    def content_generator():
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    return chunks, content_generator()

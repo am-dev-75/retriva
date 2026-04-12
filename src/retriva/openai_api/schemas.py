@@ -76,6 +76,29 @@ class ChatCompletionResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Chat completions — streaming response (SSE delta protocol)
+# ---------------------------------------------------------------------------
+
+class DeltaContent(BaseModel):
+    role: Optional[str] = None
+    content: Optional[str] = None
+
+
+class StreamingChoice(BaseModel):
+    index: int = 0
+    delta: DeltaContent
+    finish_reason: Optional[str] = None
+
+
+class ChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    model: str = "retriva"
+    choices: List[StreamingChoice]
+
+
+# ---------------------------------------------------------------------------
 # Models — response
 # ---------------------------------------------------------------------------
 

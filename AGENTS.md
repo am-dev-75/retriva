@@ -1,18 +1,14 @@
-# Agent Instructions — Retriva Open WebUI Integration (Refined)
+# Agent Instructions — Retriva Chat Streaming
 
 ## Mission
-Expose Retriva as a **remote RAG backend** fully compatible with **Open WebUI**.
+Add **OpenAI-compatible streaming** support to `/v1/chat/completions`.
 
 ## Order of authority
-1. `specs/004-open-webui-integration/spec.md`
-2. `specs/004-open-webui-integration/openapi.yaml`
+1. `specs/005-chat-streaming/spec.md`
+2. `specs/005-chat-streaming/openapi.yaml`
 3. `.agent/rules/retriva-constitution.md`
-4. `specs/004-open-webui-integration/architecture.md`
-5. `specs/004-open-webui-integration/tasks.md`
 
 ## Non-negotiable rules
-- Do not modify the repository main README.md
-- Treat Open WebUI as an external client
-- `/v1/chat/completions` MUST be OpenAI-compatible
-- Support multiple knowledge bases (collections)
-- Preserve existing ingestion and retrieval logic
+- Do not modify repository README.md
+- Preserve non-streaming behavior
+- Streaming must follow OpenAI SSE delta protocol

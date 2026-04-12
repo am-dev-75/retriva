@@ -1,1 +1,1 @@
-# /architect — Refined Open WebUI Integration Architecture
+# /architect — Chat Streaming

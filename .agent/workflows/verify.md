@@ -1,1 +1,1 @@
-# /verify — Refined Open WebUI Integration Verification
+# /verify — Chat Streaming

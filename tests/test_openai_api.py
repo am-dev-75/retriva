@@ -160,3 +160,118 @@ def test_chat_completions_deduplicates_citations(mock_ask):
 
     citations = response.json()["choices"][0]["message"]["metadata"]["citations"]
     assert len(citations) == 2  # doc-1 and doc-2, not 3
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/chat/completions — streaming (stream=true)
+# ---------------------------------------------------------------------------
+
+import json
+
+
+def _parse_sse_events(raw_text: str) -> list:
+    """Parse SSE text into a list of parsed JSON events + the [DONE] marker."""
+    events = []
+    for line in raw_text.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        assert line.startswith("data: "), f"SSE line missing 'data: ' prefix: {line!r}"
+        payload = line[len("data: "):]
+        if payload == "[DONE]":
+            events.append("[DONE]")
+        else:
+            events.append(json.loads(payload))
+    return events
+
+
+@patch("retriva.openai_api.routers.chat_completions.ask_question_streaming")
+def test_streaming_success(mock_stream):
+    """stream=true should return SSE events with correct delta protocol."""
+    mock_chunks = [
+        {"doc_id": "doc-1", "source_path": "/p/doc1", "page_title": "Doc 1", "text": "ctx"},
+    ]
+
+    def fake_content_gen():
+        yield "Hello"
+        yield " world"
+        yield "!"
+
+    mock_stream.return_value = (mock_chunks, fake_content_gen())
+
+    payload = {
+        "model": "retriva",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "stream": True,
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/v1/chat/completions", json=payload)
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+
+    events = _parse_sse_events(response.text)
+
+    # Must have: role event + 3 content events + stop event + [DONE]
+    assert len(events) == 6
+
+    # First event: role announcement
+    first = events[0]
+    assert first["object"] == "chat.completion.chunk"
+    assert first["choices"][0]["delta"]["role"] == "assistant"
+    assert first["choices"][0]["delta"].get("content") is None
+    assert first["choices"][0]["finish_reason"] is None
+    completion_id = first["id"]
+    assert completion_id.startswith("chatcmpl-")
+
+    # Content events
+    assert events[1]["choices"][0]["delta"]["content"] == "Hello"
+    assert events[2]["choices"][0]["delta"]["content"] == " world"
+    assert events[3]["choices"][0]["delta"]["content"] == "!"
+
+    # All share the same ID
+    for e in events[:-1]:  # exclude [DONE]
+        assert e["id"] == completion_id
+
+    # Stop event
+    stop = events[4]
+    assert stop["choices"][0]["finish_reason"] == "stop"
+    assert stop["choices"][0]["delta"].get("content") is None
+
+    # Terminator
+    assert events[5] == "[DONE]"
+
+
+@patch("retriva.openai_api.routers.chat_completions.ask_question_streaming")
+def test_streaming_pipeline_error(mock_stream):
+    """Pipeline error during streaming init should return 500."""
+    mock_stream.side_effect = RuntimeError("Qdrant down")
+
+    payload = {
+        "model": "retriva",
+        "messages": [{"role": "user", "content": "test"}],
+        "stream": True,
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/v1/chat/completions", json=payload)
+
+    assert response.status_code == 500
+
+
+@patch("retriva.openai_api.routers.chat_completions.ask_question_streaming")
+def test_streaming_no_user_message(mock_stream):
+    """stream=true with no user message should still return 400."""
+    payload = {
+        "model": "retriva",
+        "messages": [{"role": "system", "content": "hi"}],
+        "stream": True,
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/v1/chat/completions", json=payload)
+
+    assert response.status_code == 400
+    mock_stream.assert_not_called()
+

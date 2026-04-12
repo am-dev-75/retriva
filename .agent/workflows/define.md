@@ -1,1 +1,1 @@
-# /define — Refined Open WebUI Integration Spec
+# /define — Chat Streaming
