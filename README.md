@@ -5,6 +5,7 @@
   - [Introduction](#introduction)
   - [Architecture](#architecture)
   - [Implementation](#implementation)
+  - [Quick Start](#quick-start)
   - [Licensing](#licensing)
 
 ## Introduction
@@ -27,6 +28,25 @@ The final architecture should look like ![this:](docs/assets/Retriva_final_archi
 ## Implementation
 
 See [this page](docs/implementation.md) for the implementation details.
+
+## Quick Start
+
+Install dependencies (the use of a virtual environment is recommended):
+```pip install -r requirements.txt```
+
+If necessary, [deploy a Qdrant instance](https://qdrant.tech/documentation/quickstart/).
+
+Copy `.env` from `.env.example` and fill in the values so that Retriva can connect to Qdrant and the LLM's runner(s) you intend to use.
+
+Start an instance of [Open WebUI for Retriva](https://github.com/am-dev-75/open-webui_retriva).
+
+Build the knowledge base from *your* documents with the CLI. For instance:
+
+```bash
+PYTHONPATH=src python -m retriva.cli reindex --path ~/my_documents
+```
+
+Point your browser to the URL of the Open WebUI for Retriva instance and start having fun.
 
 ## Licensing
 
