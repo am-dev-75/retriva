@@ -1,21 +1,18 @@
-# Agent Instructions — Retriva v0.2 Image Injection
+# Agent Instructions — Retriva Open WebUI Integration (Refined)
 
 ## Mission
-
-Add **image injection support** to Retriva, starting from the current HTML-only ingestion pipeline.
+Expose Retriva as a **remote RAG backend** fully compatible with **Open WebUI**.
 
 ## Order of authority
-
-1. `specs/002-image-injection/spec.md`
-2. `.agent/rules/retriva-constitution.md`
-3. `specs/002-image-injection/architecture.md`
-4. `specs/002-image-injection/tasks.md`
-5. `docs/roadmap.md`
+1. `specs/004-open-webui-integration/spec.md`
+2. `specs/004-open-webui-integration/openapi.yaml`
+3. `.agent/rules/retriva-constitution.md`
+4. `specs/004-open-webui-integration/architecture.md`
+5. `specs/004-open-webui-integration/tasks.md`
 
 ## Non-negotiable rules
-
 - Do not modify the repository main README.md
-- Do not introduce OCR or VLM processing
-- Keep image injection architecturally parallel to HTML injection
-- Do not change retrieval logic
-- Preserve backward compatibility with HTML-only injection
+- Treat Open WebUI as an external client
+- `/v1/chat/completions` MUST be OpenAI-compatible
+- Support multiple knowledge bases (collections)
+- Preserve existing ingestion and retrieval logic

@@ -4,6 +4,7 @@
 - [Retriva](#retriva)
   - [Introduction](#introduction)
   - [Architecture](#architecture)
+  - [Implementation](#implementation)
   - [Licensing](#licensing)
 
 ## Introduction
@@ -22,6 +23,10 @@ Retriva is built around a RAG (Retrieval-Augmented Generation) paradigm, current
 - **User Interface (`ui/`)**: A Streamlit-based frontend offering a conversational chat experience. It supports grounded answers, citations, and features an integrated debug panel to visualize the retrieval process.
 
 The final architecture should look like ![this:](docs/assets/Retriva_final_architecture.drawio.png)
+
+## Implementation
+
+See [this page](docs/implementation.md) for the implementation details.
 
 ## Licensing
 

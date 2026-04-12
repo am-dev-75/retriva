@@ -1,0 +1,11 @@
+openapi: 3.1.0
+info:
+  title: Retriva Job Cancellation API
+  version: "0.4.2"
+paths:
+  /v1/jobs/{job_id}/cancel:
+    post:
+      summary: Cancel a job
+      responses:
+        "202":
+          description: Cancellation requested

@@ -1,26 +1,22 @@
 ---
-description: Constitution for Retriva v0.2 image injection
+description: Constitution for Retriva Open WebUI integration (refined)
 alwaysApply: true
 ---
 
-# Retriva Constitution — v0.2
+# Retriva Constitution — Open WebUI Integration
 
 ## Product law
-
-- The target is **v0.2: HTML + image injection**
-- Images are injectable assets, not yet semantic knowledge
-- No OCR or VLM is required in this version
+- Retriva acts as a **RAG backend**, not a UI
+- Open WebUI is an external client
+- Answers must be grounded and cite sources
 
 ## Architecture law
-
-- Extend existing ingestion logic; do not replace it
-- Image injection must mirror HTML injection structure
-- Use the same chunk/indexing abstractions where possible
+- Use REST APIs only
+- Follow OpenAI-style request/response schemas
+- Keep ingestion, retrieval, and chat logic decoupled
 
 ## Scope law
-
 Out of scope:
-- Image understanding
-- Retrieval changes
-- API exposure
-- Async jobs
+- UI implementation
+- Authentication / RBAC
+- Hybrid retrieval or reranking

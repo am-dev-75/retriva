@@ -53,6 +53,9 @@ class Settings(BaseSettings):
 
     # Retrieving stuff
     retriever_top_k: int = 200
+
+    # OpenAI-compatible API (for Open WebUI)
+    openai_api_port: int = 8001
     
     model_config = SettingsConfigDict(
         env_file=str((Path(__file__).resolve().parents[2] / ".env").resolve()), 
