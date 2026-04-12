@@ -50,6 +50,10 @@ FILE_TYPE_REGISTRY: Dict[str, Dict] = {
         "extensions": {".png", ".jpg", ".jpeg", ".gif", ".webp"},
         "sniffer": None,
     },
+    "text": {
+        "extensions": {".txt"},
+        "sniffer": None,
+    },
     # Future formats:
     # "pdf": {"extensions": {".pdf"}, "sniffer": None},
 }

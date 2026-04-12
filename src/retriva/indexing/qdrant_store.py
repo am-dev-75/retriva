@@ -94,11 +94,11 @@ def upsert_chunks(client: QdrantClient, chunks: List[Chunk]):
         _upsert_with_retry(client, points, batch_num)
 
 
-def search_chunks(client: QdrantClient, query_vector: List[float], top_k: int = 5) -> List[dict]:
-    logger.debug(f"Searching top_{top_k} chunks in '{COLLECTION_NAME}'...")
+def search_chunks(client: QdrantClient, query_vector: List[float], retriever_top_k: int = 5) -> List[dict]:
+    logger.debug(f"Searching top_{retriever_top_k} chunks in '{COLLECTION_NAME}'...")
     results = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
-        limit=top_k
+        limit=retriever_top_k
     )
     return [hit.payload for hit in results.points]

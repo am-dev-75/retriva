@@ -75,10 +75,33 @@ def ingest_image_file(path: str, api_url: str) -> None:
         logger.error(f"Error uploading image {path}: {e}")
 
 
+def ingest_text_file(path: str, api_url: str) -> None:
+    """Read a plain-text file and POST it to the ingestion API."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        logger.error(f"Error reading {path}: {e}")
+        return
+
+    payload = {
+        "source_path": path,
+        "page_title": Path(path).stem,
+        "content_text": content,
+    }
+
+    try:
+        r = requests.post(f"{api_url}/api/v1/ingest/text", json=payload)
+        r.raise_for_status()
+    except Exception as e:
+        logger.error(f"Error uploading text {path}: {e}")
+
+
 # Maps file type keys (from FILE_TYPE_REGISTRY) to handler functions.
 INGEST_HANDLERS: Dict[str, Callable[[str, str], None]] = {
     "html": ingest_html_file,
     "image": ingest_image_file,
+    "text": ingest_text_file,
 }
 
 

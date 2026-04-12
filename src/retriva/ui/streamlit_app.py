@@ -78,7 +78,7 @@ if prompt := st.chat_input("Ask a question about the mirrored corpus (English or
     with st.chat_message("assistant"):
         with st.spinner("Searching local mirror..."):
             try:
-                response_data = ask_question(prompt, settings.top_k)
+                response_data = ask_question(prompt, settings.retriever_top_k)
                 answer = response_data["answer"]
                 chunks = response_data["retrieved_chunks"]
                 grounding = response_data.get("grounding", {})

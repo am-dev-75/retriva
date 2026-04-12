@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     chat_base_url: str = "https://openrouter.ai/api/v1"
     chat_model: str = "qwen/qwen3.5-27b"
     chat_openai_api_key: Optional[str] = None
+    chat_temperature: float = 0.0
+    chat_top_p: float = 0.9
 
     # Chunking
     max_chunk_chars: int = 12000
@@ -50,7 +52,7 @@ class Settings(BaseSettings):
     indexing_batch_size: int = 50
 
     # Retrieving stuff
-    top_k: int = 200
+    retriever_top_k: int = 200
     
     model_config = SettingsConfigDict(
         env_file=str((Path(__file__).resolve().parents[2] / ".env").resolve()), 

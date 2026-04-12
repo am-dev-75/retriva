@@ -19,11 +19,11 @@ from typing import List, Dict
 
 logger = get_logger(__name__)
 
-def retrieve_top_chunks(query: str, top_k: int = 5) -> List[Dict]:
-    logger.debug(f"Retrieving top_{top_k} chunks for query...")
+def retrieve_top_chunks(query: str, retriever_top_k: int = 5) -> List[Dict]:
+    logger.debug(f"Retrieving top_{retriever_top_k} chunks for query...")
     embeddings = get_embeddings([query])
     query_vector = embeddings[0]
     
     client = get_client()
-    results = search_chunks(client, query_vector, top_k=top_k)
+    results = search_chunks(client, query_vector, retriever_top_k=retriever_top_k)
     return results

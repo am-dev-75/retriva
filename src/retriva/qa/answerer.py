@@ -21,12 +21,12 @@ from retriva.logger import get_logger
 
 logger = get_logger(__name__)
 
-def ask_question(question: str, top_k: int = 5) -> dict:
+def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     """
     Full QA pipeline: Retrieve, Prompt, Generate Chat
     """
     logger.info(f"Processing question: {question}")
-    chunks = retrieve_top_chunks(question, top_k=top_k)
+    chunks = retrieve_top_chunks(question, retriever_top_k=retriever_top_k)
     logger.info(f"Retrieved {len(chunks)} chunks for context.")
     
     system_prompt = build_prompt(question, chunks)
@@ -43,8 +43,8 @@ def ask_question(question: str, top_k: int = 5) -> dict:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question}
         ],
-        temperature=0.0,
-        top_p=0.9
+        temperature=settings.chat_temperature,
+        top_p=settings.chat_top_p
     )
     
     answer_text = response.choices[0].message.content
