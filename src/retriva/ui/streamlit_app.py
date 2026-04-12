@@ -23,7 +23,7 @@ if src_path not in sys.path:
 
 from retriva.logger import setup_logging, get_logger
 from retriva.qa.answerer import ask_question
-from retriva.config import settings
+from retriva.config import settings, VERSION
 
 setup_logging()
 logger = get_logger(__name__)
@@ -51,8 +51,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🔍 Retriva v0.1.1 (Q&A PoC)")
-st.markdown("A grounded retrieval chatbot answering exclusively from the local `wget` mirror.")
+st.title(f"🔍 Retriva {VERSION}")
+st.markdown("A grounded RAG chatbot answering exclusively from the custom knowledge base.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []

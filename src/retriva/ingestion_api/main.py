@@ -21,9 +21,11 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down API...")
 
+from retriva.config import VERSION
+
 app = FastAPI(
     title="Retriva Modular Injection API",
-    version="0.3.0",
+    version=VERSION,
     description="REST API for injecting documents into the Retriva RAG pipeline.",
     lifespan=lifespan
 )

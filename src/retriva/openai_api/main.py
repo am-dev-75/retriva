@@ -24,9 +24,10 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down OpenAI-compatible API...")
 
 
+from retriva.config import VERSION
 app = FastAPI(
     title="Retriva OpenAI-Compatible API",
-    version="0.7.0",
+    version=VERSION,
     description=(
         "OpenAI-compatible chat completions and model listing for "
         "Open WebUI integration."
