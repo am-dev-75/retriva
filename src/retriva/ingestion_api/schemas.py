@@ -26,3 +26,13 @@ class ChunkIngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     status: str
     message: str
+    job_id: Optional[str] = None
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: str
+    source: str
+    job_type: str
+    created_at: str
+    updated_at: str
+    error: Optional[str] = None

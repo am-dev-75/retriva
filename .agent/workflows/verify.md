@@ -1,1 +1,1 @@
-# /verify — Chat Streaming
+# /verify — Job Cancellation

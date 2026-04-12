@@ -1,1 +1,1 @@
-# /define — Chat Streaming
+# /define — Job Cancellation

@@ -1,1 +1,1 @@
-# /execute — Chat Streaming
+# /execute — Job Cancellation

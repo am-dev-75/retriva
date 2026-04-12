@@ -20,7 +20,7 @@ from retriva.config import settings
 from retriva.domain.models import Chunk
 from retriva.indexing.embeddings import get_embeddings
 from retriva.logger import get_logger
-from typing import List
+from typing import Callable, List, Optional
 
 logger = get_logger(__name__)
 
@@ -66,13 +66,18 @@ def _upsert_with_retry(client: QdrantClient, points: List[PointStruct], batch_nu
                     f"Upsert batch {batch_num} failed after {MAX_RETRIES} attempts: {e}"
                 ) from e
 
-def upsert_chunks(client: QdrantClient, chunks: List[Chunk]):
+def upsert_chunks(client: QdrantClient, chunks: List[Chunk], cancel_check: Optional[Callable[[], bool]] = None):
     if not chunks:
         return
         
     logger.info(f"Indexing {len(chunks)} chunks in batches of {settings.indexing_batch_size}...")
     
     for i in range(0, len(chunks), settings.indexing_batch_size):
+        # Cancellation checkpoint — check before each batch
+        if cancel_check and cancel_check():
+            from retriva.ingestion_api.job_manager import CancellationError
+            raise CancellationError("Job cancelled during upsert")
+
         batch_chunks = chunks[i : i + settings.indexing_batch_size]
         batch_num = i // settings.indexing_batch_size + 1
         texts = [c.text for c in batch_chunks]

@@ -1,0 +1,187 @@
+# Copyright (C) 2026 Andrea Marson (am.dev.75@gmail.com)
+
+"""
+Thread-safe in-memory job manager for tracking asynchronous ingestion jobs.
+
+Jobs follow a cooperative cancellation model: the ``cancel_check`` callback
+is polled at batch boundaries in the embedding and upsert loops. There is no
+thread interruption or force-kill.
+"""
+
+import threading
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Dict, List, Optional
+
+from retriva.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Job status enum
+# ---------------------------------------------------------------------------
+
+class JobStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+
+
+TERMINAL_STATES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+
+
+# ---------------------------------------------------------------------------
+# Cancellation exception — raised at checkpoints, caught by workers
+# ---------------------------------------------------------------------------
+
+class CancellationError(Exception):
+    """Raised when a cancellation checkpoint detects a pending cancel request."""
+
+
+# ---------------------------------------------------------------------------
+# Job dataclass
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Job:
+    id: str
+    status: JobStatus
+    source: str
+    job_type: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    error: Optional[str] = None
+    cancel_requested: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "job_id": self.id,
+            "status": self.status.value,
+            "source": self.source,
+            "job_type": self.job_type,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "error": self.error,
+        }
+
+
+# ---------------------------------------------------------------------------
+# JobManager singleton
+# ---------------------------------------------------------------------------
+
+class JobManager:
+    """Thread-safe singleton for managing ingestion job lifecycle."""
+
+    _instance: Optional["JobManager"] = None
+    _init_lock = threading.Lock()
+
+    def __new__(cls) -> "JobManager":
+        if cls._instance is None:
+            with cls._init_lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._jobs: Dict[str, Job] = {}
+                    instance._lock = threading.Lock()
+                    cls._instance = instance
+        return cls._instance
+
+    # -- Factory -----------------------------------------------------------
+
+    def create_job(self, source: str, job_type: str) -> Job:
+        job = Job(
+            id=uuid.uuid4().hex,
+            status=JobStatus.PENDING,
+            source=source,
+            job_type=job_type,
+        )
+        with self._lock:
+            self._jobs[job.id] = job
+        logger.debug(f"Job {job.id} created ({job_type}: {source})")
+        return job
+
+    # -- State transitions -------------------------------------------------
+
+    def start_job(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status == JobStatus.PENDING:
+                job.status = JobStatus.RUNNING
+                job.updated_at = datetime.now(timezone.utc)
+                logger.debug(f"Job {job_id} → running")
+
+    def complete_job(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status == JobStatus.RUNNING:
+                job.status = JobStatus.COMPLETED
+                job.updated_at = datetime.now(timezone.utc)
+                logger.info(f"Job {job_id} → completed")
+
+    def fail_job(self, job_id: str, error: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status in (JobStatus.RUNNING, JobStatus.CANCELLING):
+                job.status = JobStatus.FAILED
+                job.error = error
+                job.updated_at = datetime.now(timezone.utc)
+                logger.error(f"Job {job_id} → failed: {error}")
+
+    def request_cancel(self, job_id: str) -> bool:
+        """
+        Request cancellation.
+
+        Returns True if the request was accepted (job moved to CANCELLING).
+        Returns False if the job is in a terminal state (cannot cancel).
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return False
+            if job.status in TERMINAL_STATES:
+                return False
+            if job.status in (JobStatus.CANCELLING,):
+                return True  # already cancelling, idempotent
+            job.status = JobStatus.CANCELLING
+            job.cancel_requested = True
+            job.updated_at = datetime.now(timezone.utc)
+            logger.info(f"Job {job_id} → cancelling")
+            return True
+
+    def mark_cancelled(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status == JobStatus.CANCELLING:
+                job.status = JobStatus.CANCELLED
+                job.updated_at = datetime.now(timezone.utc)
+                logger.info(f"Job {job_id} → cancelled")
+
+    # -- Queries -----------------------------------------------------------
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return job.cancel_requested if job else False
+
+    def get_job(self, job_id: str) -> Optional[Job]:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def list_jobs(self) -> List[Job]:
+        with self._lock:
+            return list(self._jobs.values())
+
+    # -- Testing support ---------------------------------------------------
+
+    @classmethod
+    def _reset(cls) -> None:
+        """Reset the singleton — for testing only."""
+        with cls._init_lock:
+            if cls._instance is not None:
+                cls._instance._jobs.clear()
+                cls._instance = None

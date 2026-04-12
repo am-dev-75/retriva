@@ -1,1 +1,1 @@
-# /architect — Chat Streaming
+# /architect — Job Cancellation

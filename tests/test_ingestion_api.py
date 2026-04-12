@@ -11,7 +11,7 @@ def mock_qdrant_startup():
 
 from retriva.ingestion_api.main import app
 
-@patch("retriva.ingestion_api.routers.ingest.upsert_chunks")
+@patch("retriva.ingestion_api.routers.ingest_text.upsert_chunks")
 def test_ingest_text(mock_upsert_chunks):
     payload = {
         "source_path": "test://doc",

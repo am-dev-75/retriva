@@ -1,10 +1,10 @@
 ---
-description: Constitution for Retriva chat streaming
+description: Constitution for Retriva job cancellation
 alwaysApply: true
 ---
 
-# Retriva Constitution — Chat Streaming
+# Retriva Constitution — Job Cancellation
 
-- Streaming is additive
-- Non-streaming remains default
-- Streaming uses Server-Sent Events
+- Job cancellation is additive
+- No breaking changes to existing job APIs
+- Workers must periodically check cancellation state

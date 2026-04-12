@@ -3,6 +3,7 @@
 - [Notes about the implementation](#notes-about-the-implementation)
   - [Open WebUI Interfacing](#open-webui-interfacing)
     - [Streaming support](#streaming-support)
+    - [Job cancellation support](#job-cancellation-support)
 
 ## Open WebUI Interfacing
 
@@ -19,3 +20,13 @@ Key design decisions:
 * Grounding validation skipped in streaming mode (it needs the full answer text)
 * Citations only in non-streaming — delta protocol has no slot for metadata
 * New `ask_question_streaming()` is a sibling of `ask_question()`, not a modification
+
+### Job cancellation support
+
+Key design decisions:
+
+* Cooperative cancellation via `cancel_check` callback injected into `upsert_chunks()` and `get_embeddings()` — checked at batch boundaries
+* Thread-safe singleton `JobManager` with `threading.Lock` — `BackgroundTasks` run in a thread pool
+* Backward-compatible — `IngestResponse.job_id` is optional; existing clients unaffected
+* No rollback — chunks upserted before cancellation stay in Qdrant
+* `CancellationError` propagates from checkpoints → caught by the background worker → sets state to cancelled

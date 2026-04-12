@@ -16,7 +16,7 @@ import time
 from openai import OpenAI
 from retriva.config import settings
 from retriva.logger import get_logger
-from typing import List
+from typing import Callable, List, Optional
 
 import httpx
 from openai import APIConnectionError, APITimeoutError, RateLimitError
@@ -110,7 +110,7 @@ def _embed_batch(client: OpenAI, texts: List[str]) -> List[List[float]]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_embeddings(texts: List[str]) -> List[List[float]]:
+def get_embeddings(texts: List[str], cancel_check: Optional[Callable[[], bool]] = None) -> List[List[float]]:
     if not texts:
         return []
 
@@ -128,6 +128,11 @@ def get_embeddings(texts: List[str]) -> List[List[float]]:
 
     all_embeddings: List[List[float]] = []
     for i in range(0, len(texts), settings.indexing_batch_size):
+        # Cancellation checkpoint — check before each batch
+        if cancel_check and cancel_check():
+            from retriva.ingestion_api.job_manager import CancellationError
+            raise CancellationError("Job cancelled during embedding")
+
         batch = texts[i : i + settings.indexing_batch_size]
         batch_num = i // settings.indexing_batch_size + 1
         try:
