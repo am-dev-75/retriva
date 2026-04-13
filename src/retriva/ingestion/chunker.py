@@ -97,7 +97,7 @@ def create_image_chunks(document: ParsedDocument) -> List[Chunk]:
             chunk_id=chunk_id,
             chunk_index=idx,
             chunk_type="image",
-            language="en",
+            language=document.language,
             image_path=img.src
         )
         
@@ -133,7 +133,7 @@ def create_chunks(document: ParsedDocument) -> List[Chunk]:
             chunk_id=chunk_id,
             chunk_index=idx,
             chunk_type="text",
-            language="en"
+            language=document.language
         )
         
         chunk = Chunk(text=text, metadata=meta)

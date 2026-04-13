@@ -81,7 +81,7 @@ def upsert_chunks(client: QdrantClient, chunks: List[Chunk], cancel_check: Optio
         batch_chunks = chunks[i : i + settings.indexing_batch_size]
         batch_num = i // settings.indexing_batch_size + 1
         texts = [c.text for c in batch_chunks]
-        embeddings = get_embeddings(texts)
+        embeddings = get_embeddings(texts, cancel_check=cancel_check)
         
         points = [
             PointStruct(

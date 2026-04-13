@@ -65,8 +65,9 @@ for msg in st.session_state.messages:
                 for idx, chunk in enumerate(msg["debug_chunks"]):
                     title = chunk.get("page_title", "Unknown")
                     url = chunk.get("canonical_doc_id", "Unknown")
+                    lang = chunk.get("language", "en")
                     text = chunk.get("text", "")
-                    st.markdown(f"**[{idx+1}] {title}**  \n`{url}`")
+                    st.markdown(f"**[{idx+1}] {title}** (`{lang}`)  \n`{url}`")
                     st.markdown(f"<div class='citation-box'>{text[:300]}...</div>", unsafe_allow_html=True)
 
 if prompt := st.chat_input("Ask a question about the mirrored corpus (English or Italian)..."):
@@ -104,8 +105,9 @@ if prompt := st.chat_input("Ask a question about the mirrored corpus (English or
                         for idx, chunk in enumerate(chunks):
                             title = chunk.get("page_title", "Unknown")
                             url = chunk.get("canonical_doc_id", "Unknown")
+                            lang = chunk.get("language", "en")
                             text = chunk.get("text", "")
-                            st.markdown(f"**[{idx+1}] {title}**  \n`{url}`")
+                            st.markdown(f"**[{idx+1}] {title}** (`{lang}`)  \n`{url}`")
                             st.markdown(f"<div class='citation-box'>{text[:300]}...</div>", unsafe_allow_html=True)
                 
                 st.session_state.messages.append({

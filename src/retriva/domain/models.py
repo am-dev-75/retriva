@@ -42,5 +42,6 @@ class ParsedDocument(BaseModel):
     canonical_doc_id: str
     page_title: str
     content_text: str
+    language: str = "en"
     chunks: List[Chunk] = Field(default_factory=list)
     images: List[ImageContext] = Field(default_factory=list)

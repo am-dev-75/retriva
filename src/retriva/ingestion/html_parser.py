@@ -54,3 +54,12 @@ def extract_title(html: str) -> str:
     if soup.title and soup.title.string:
         return soup.title.string.strip()
     return ""
+
+def extract_language(html: str) -> str:
+    """Extract language from html tag lang attribute. Defaults to 'en'."""
+    soup = BeautifulSoup(html, "html.parser")
+    if soup.html and soup.html.get("lang"):
+        return soup.html.get("lang").strip().split("-")[0].lower() # e.g. "en-us" -> "en"
+    if soup.html and soup.html.get("xml:lang"):
+        return soup.html.get("xml:lang").strip().split("-")[0].lower()
+    return "en"

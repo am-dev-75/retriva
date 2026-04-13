@@ -31,7 +31,7 @@ If the context does not contain sufficient evidence to answer the question, you 
 "I do not have sufficient evidence in my knowledge base to answer this question."
 
 Support your factual claims with citations in the format [Document X].
-Maintain language alignment: if the question is in English, reply in English. If it is in Italian, reply in Italian.
+Identify the language of the user's question. Formulate your complete answer strictly in the exact language used by the user, even if the provided chunks are documented entirely in a different language.
 
 CONTEXT:
 {context_str}

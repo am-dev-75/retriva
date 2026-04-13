@@ -22,6 +22,7 @@ class Citation(BaseModel):
     document_id: str = Field(..., description="Source path or canonical document ID")
     title: str = Field("", description="Page title from chunk metadata")
     source: str = Field("", description="Source URL or filesystem path")
+    language: Optional[str] = Field("en", description="Source document language")
 
 
 class MessageMetadata(BaseModel):

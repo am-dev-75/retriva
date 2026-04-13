@@ -54,6 +54,7 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
                 document_id=doc_id,
                 title=chunk.get("page_title", ""),
                 source=chunk.get("source_path", ""),
+                language=chunk.get("language", "en")
             )
         )
     return citations

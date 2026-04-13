@@ -14,7 +14,7 @@
 
 from bs4 import BeautifulSoup
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 from retriva.domain.models import ImageContext
 from retriva.ingestion.vlm_describer import describe_image
 from retriva.logger import get_logger
@@ -84,6 +84,7 @@ def resolve_image_path(src: str, html_file_path: str) -> Optional[Path]:
 def enrich_images_with_vlm(
     images: List[ImageContext],
     html_file_path: str,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> None:
     """
     For each ImageContext, resolves its src to a local file and calls the
@@ -94,6 +95,10 @@ def enrich_images_with_vlm(
         return
 
     for img in images:
+        if cancel_check and cancel_check():
+            from retriva.ingestion_api.job_manager import CancellationError
+            raise CancellationError("Job cancelled during VLM enrichment")
+
         resolved = resolve_image_path(img.src, html_file_path)
         if resolved is None:
             continue
