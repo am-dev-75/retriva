@@ -1,10 +1,9 @@
 # Retriva Roadmap (excerpt)
 
-## v0.1
-- HTML injection
+## Current increment
+- true cross-language retrieval for English and Italian
+- companion validation and benchmark pack for bilingual regression
 
-## v0.2
-- HTML + image injection
-
-## v0.3
-- Injection API + async jobs
+## Later increments
+- automated score baselines in CI
+- optional language-specific retrieval tuning

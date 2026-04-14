@@ -1,0 +1,63 @@
+# Retriva Bilingual Benchmark Suite
+
+fixtures:
+  - id: "doc_en_1"
+    language: "en"
+    title: "Project Apollo Architecture"
+    content: |
+      The central API router for Project Apollo uses a strict rate-limit of 525 requests per minute 
+      to protect the core PostgreSQL operational databases from unexpected overwhelming latency spikes.
+
+  - id: "doc_it_1"
+    language: "it"
+    title: "Progetto Apollo Backup"
+    content: |
+      I backup di emergenza per il Progetto Apollo vengono conservati localmente su dischi off-site 
+      per esattamente 75 giorni prima di essere rimpiazzati o distrutti in maniera permanente.
+
+  - id: "doc_en_unrelated"
+    language: "en"
+    title: "Generic Cloud Hosting limits"
+    content: |
+      Most generic cloud API limits default to 300 requests per minute with an option to 
+      upgrade limits after validating account ownership over exactly 30 days.
+
+cases:
+  # 1. EN -> EN: English query expects the English document, and an English answer
+  - id: "en_to_en_rate_limit"
+    query_text: "What is the specific rate limit protecting the Apollo PostgreSQL database?"
+    query_language: "en"
+    expected_retrieval_ids:
+      - "doc_en_1"
+    expected_answer_language: "en"
+
+  # 2. IT -> IT: Italian query expects the Italian document, and an Italian answer
+  - id: "it_to_it_backup_days"
+    query_text: "Per quanti giorni esatti vengono conservati i backup del Progetto Apollo?"
+    query_language: "it"
+    expected_retrieval_ids:
+      - "doc_it_1"
+    expected_answer_language: "it"
+
+  # 3. IT -> EN: Italian query expecting to retrieve an English fact, answering in Italian
+  - id: "it_to_en_rate_limit"
+    query_text: "Qual è il limite di richieste al minuto per proteggere il database PostgreSQL di Apollo?"
+    query_language: "it"
+    expected_retrieval_ids:
+      - "doc_en_1"
+    expected_answer_language: "it"
+
+  # 4. EN -> IT: English query expecting to retrieve an Italian fact, answering in English
+  - id: "en_to_it_backup_days"
+    query_text: "According to the Italian documents, exactly how many days are the Apollo emergency backups kept off-site?"
+    query_language: "en"
+    expected_retrieval_ids:
+      - "doc_it_1"
+    expected_answer_language: "en"
+
+  # 5. Out of Context / Fallback behavior 
+  - id: "fallback_unsupported_language_or_context"
+    query_text: "Combien d'ingénieurs travaillent sur le projet Apollo?"
+    query_language: "fr"
+    expected_retrieval_ids: []
+    expected_fallback_triggered: true
