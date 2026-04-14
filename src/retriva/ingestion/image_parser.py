@@ -16,8 +16,11 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import Callable, List, Optional
 from retriva.domain.models import ImageContext
-from retriva.ingestion.vlm_describer import describe_image
+from retriva.registry import CapabilityRegistry
 from retriva.logger import get_logger
+
+# Import module to trigger default registration
+import retriva.ingestion.vlm_describer  # noqa: F401 — registers DefaultVLMDescriber
 
 logger = get_logger(__name__)
 
@@ -94,6 +97,8 @@ def enrich_images_with_vlm(
         logger.debug("No origin file path — skipping VLM enrichment.")
         return
 
+    vlm = CapabilityRegistry().get_instance("vlm_describer")
+
     for img in images:
         if cancel_check and cancel_check():
             from retriva.ingestion_api.job_manager import CancellationError
@@ -102,7 +107,7 @@ def enrich_images_with_vlm(
         resolved = resolve_image_path(img.src, html_file_path)
         if resolved is None:
             continue
-        description = describe_image(resolved)
+        description = vlm.describe(resolved)
         if description:
             img.vlm_description = description
             logger.info(f"VLM enriched '{img.src}' ({len(description)} chars)")

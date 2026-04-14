@@ -19,6 +19,7 @@ from typing import List, Dict
 
 logger = get_logger(__name__)
 
+
 def retrieve_top_chunks(query: str, retriever_top_k: int = 5) -> List[Dict]:
     logger.debug(f"Retrieving top_{retriever_top_k} chunks for query...")
     embeddings = get_embeddings([query])
@@ -27,3 +28,15 @@ def retrieve_top_chunks(query: str, retriever_top_k: int = 5) -> List[Dict]:
     client = get_client()
     results = search_chunks(client, query_vector, retriever_top_k=retriever_top_k)
     return results
+
+
+class DefaultRetriever:
+    """OSS default retriever — semantic search via embeddings + Qdrant."""
+
+    def retrieve(self, query: str, top_k: int) -> List[Dict]:
+        return retrieve_top_chunks(query, retriever_top_k=top_k)
+
+
+# Register as default implementation
+from retriva.registry import CapabilityRegistry
+CapabilityRegistry().register("retriever", DefaultRetriever, priority=100)

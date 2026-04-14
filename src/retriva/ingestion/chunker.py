@@ -144,3 +144,15 @@ def create_chunks(document: ParsedDocument) -> List[Chunk]:
         
     document.chunks = chunks
     return chunks
+
+
+class DefaultChunker:
+    """OSS default chunker — recursive text splitting with image chunk support."""
+
+    def create_chunks(self, document: ParsedDocument) -> List[Chunk]:
+        return create_chunks(document)
+
+
+# Register as default implementation
+from retriva.registry import CapabilityRegistry
+CapabilityRegistry().register("chunker", DefaultChunker, priority=100)

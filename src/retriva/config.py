@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # Retrieving stuff
     retriever_top_k: int = 200
 
+    # Extension discovery (comma-separated dotted module paths)
+    retriva_extensions: str = ""
+
     # OpenAI-compatible API (for Open WebUI)
     openai_api_port: int = 8001
 

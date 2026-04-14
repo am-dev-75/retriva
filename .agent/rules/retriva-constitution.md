@@ -1,18 +1,22 @@
 ---
-description: Constitution for bilingual regression validation and retrieval benchmarking
+description: Constitution for Core + Proprietary Extensions architecture
 alwaysApply: true
 ---
 
-# Retriva Constitution — Bilingual Regression Validation
+# Retriva Constitution — Core + Extensions
 
 ## Product law
-- This pack exists to verify and measure bilingual behavior, not to redesign retrieval.
-- The system under test must support English and Italian.
-- The benchmark must include same-language and cross-language cases.
-- Grounded answers and citations remain required.
+- Retriva OSS is a complete, functional RAG system
+- Enterprise value is added through extensions, not forks
+- OSS users must never require proprietary code for correctness
 
-## Engineering law
-- Keep fixtures deterministic and minimal.
-- Prefer explicit expected evidence sets over vague qualitative checks.
-- Preserve backward compatibility.
-- Make benchmark outputs easy to compare across future releases.
+## Architecture law
+- Core defines contracts and default implementations
+- Extensions provide alternative implementations
+- Selection happens through registration and composition
+
+## Scope law
+Out of scope:
+- Licensing enforcement
+- Auth / RBAC
+- Build pipeline or packaging details

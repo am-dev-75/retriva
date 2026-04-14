@@ -63,3 +63,18 @@ def extract_language(html: str) -> str:
     if soup.html and soup.html.get("xml:lang"):
         return soup.html.get("xml:lang").strip().split("-")[0].lower()
     return "en"
+
+
+class DefaultHTMLParser:
+    """OSS default HTML parser — BeautifulSoup-based content and language extraction."""
+
+    def extract_content(self, html: str) -> str | None:
+        return extract_main_content(html)
+
+    def extract_language(self, html: str) -> str:
+        return extract_language(html)
+
+
+# Register as default implementation
+from retriva.registry import CapabilityRegistry
+CapabilityRegistry().register("html_parser", DefaultHTMLParser, priority=100)

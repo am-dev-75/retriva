@@ -2,6 +2,11 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
+# Ensure default implementations are registered before app is imported
+import retriva.ingestion.chunker       # noqa: F401
+import retriva.ingestion.html_parser   # noqa: F401
+import retriva.ingestion.vlm_describer # noqa: F401
+
 # Mock Qdrant connection during app startup Lifespan
 @pytest.fixture(autouse=True)
 def mock_qdrant_startup():
@@ -59,7 +64,7 @@ def test_ingest_html_with_image(mock_upsert_chunks, mock_vlm_enrich):
     assert "Image: test.jpg" in img_chunks[0].text
     assert img_chunks[0].metadata.image_path == "test.jpg"
 
-@patch("retriva.ingestion_api.routers.ingest_image.describe_image")
+@patch("retriva.ingestion.vlm_describer.describe_image")
 @patch("retriva.ingestion_api.routers.ingest_image.upsert_chunks")
 def test_ingest_standalone_image(mock_upsert_chunks, mock_describe):
     mock_describe.return_value = "A detailed schematic showing pin connections."

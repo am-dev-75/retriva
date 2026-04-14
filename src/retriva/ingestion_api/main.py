@@ -17,6 +17,11 @@ async def lifespan(app: FastAPI):
         init_collection(client)
     except Exception as e:
         logger.error(f"Failed to initialize Qdrant during startup: {e}")
+
+    # Load extensions (no-op if RETRIVA_EXTENSIONS is empty)
+    from retriva.registry import CapabilityRegistry
+    CapabilityRegistry().load_extensions()
+
     yield
     # Shutdown
     logger.info("Shutting down API...")

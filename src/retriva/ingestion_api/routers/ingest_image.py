@@ -4,11 +4,14 @@ import hashlib
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, status
 from retriva.ingestion_api.schemas import ImageIngestRequest, IngestResponse
-from retriva.ingestion.vlm_describer import describe_image
 from retriva.domain.models import Chunk, ChunkMetadata
 from retriva.indexing.qdrant_store import get_client, upsert_chunks
 from retriva.ingestion_api.job_manager import JobManager, CancellationError
+from retriva.registry import CapabilityRegistry
 from retriva.logger import get_logger
+
+# Import module to trigger default registration
+import retriva.ingestion.vlm_describer  # noqa: F401 — registers DefaultVLMDescriber
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -29,7 +32,9 @@ def process_image_in_background(payload: ImageIngestRequest, job_id: str):
         image_path = Path(payload.file_path)
 
         # Call VLM for a detailed description
-        description = describe_image(image_path)
+        registry = CapabilityRegistry()
+        vlm = registry.get_instance("vlm_describer")
+        description = vlm.describe(image_path)
 
         text_parts = [f"Image: {image_path.name}"]
         if description:

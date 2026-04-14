@@ -2,11 +2,14 @@
 
 from fastapi import APIRouter, BackgroundTasks, status
 from retriva.ingestion_api.schemas import TextIngestRequest, IngestResponse
-from retriva.ingestion.chunker import create_chunks
 from retriva.domain.models import ParsedDocument
 from retriva.indexing.qdrant_store import get_client, upsert_chunks
 from retriva.ingestion_api.job_manager import JobManager, CancellationError
+from retriva.registry import CapabilityRegistry
 from retriva.logger import get_logger
+
+# Import module to trigger default registration
+import retriva.ingestion.chunker  # noqa: F401 — registers DefaultChunker
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -32,7 +35,7 @@ def process_text_in_background(payload: TextIngestRequest, job_id: str):
             content_text=payload.content_text,
             images=[],
         )
-        chunks = create_chunks(doc)
+        chunks = CapabilityRegistry().get_instance("chunker").create_chunks(doc)
         client = get_client()
         upsert_chunks(client, chunks, cancel_check=cancel_check)
         manager.complete_job(job_id)

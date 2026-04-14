@@ -119,3 +119,15 @@ def describe_image(image_path: Path) -> str:
     except Exception as e:
         logger.warning(f"VLM call failed for {image_path}: {e}")
         return ""
+
+
+class DefaultVLMDescriber:
+    """OSS default VLM describer — OpenAI-compatible vision model."""
+
+    def describe(self, image_path: Path) -> str:
+        return describe_image(image_path)
+
+
+# Register as default implementation
+from retriva.registry import CapabilityRegistry
+CapabilityRegistry().register("vlm_describer", DefaultVLMDescriber, priority=100)

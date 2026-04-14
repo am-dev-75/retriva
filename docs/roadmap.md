@@ -1,9 +1,8 @@
 # Retriva Roadmap (excerpt)
 
-## Current increment
-- true cross-language retrieval for English and Italian
-- companion validation and benchmark pack for bilingual regression
+## Architectural foundations
+- Core + Extensions model
 
-## Later increments
-- automated score baselines in CI
-- optional language-specific retrieval tuning
+## Follow-ups
+- Enterprise extension packs
+- Deployment assembly pipelines

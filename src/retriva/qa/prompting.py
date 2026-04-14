@@ -37,3 +37,15 @@ CONTEXT:
 {context_str}
 """
     return system_prompt
+
+
+class DefaultPromptBuilder:
+    """OSS default prompt builder — grounded QA with citation format."""
+
+    def build_prompt(self, question: str, chunks: List[Dict]) -> str:
+        return build_prompt(question, chunks)
+
+
+# Register as default implementation
+from retriva.registry import CapabilityRegistry
+CapabilityRegistry().register("prompt_builder", DefaultPromptBuilder, priority=100)

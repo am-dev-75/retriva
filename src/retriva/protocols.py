@@ -1,0 +1,62 @@
+# Copyright (C) 2026 Andrea Marson (am.dev.75@gmail.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Protocols (interfaces) for Retriva's pluggable pipeline stages.
+
+Each protocol defines the minimal contract that any implementation —
+whether the built-in OSS default or a proprietary extension — must satisfy.
+"""
+
+from pathlib import Path
+from typing import Dict, List, Protocol, runtime_checkable
+
+from retriva.domain.models import Chunk, ParsedDocument
+
+
+@runtime_checkable
+class Retriever(Protocol):
+    """Retrieve relevant context chunks for a user query."""
+
+    def retrieve(self, query: str, top_k: int) -> List[Dict]: ...
+
+
+@runtime_checkable
+class Chunker(Protocol):
+    """Split a parsed document into indexable chunks."""
+
+    def create_chunks(self, document: ParsedDocument) -> List[Chunk]: ...
+
+
+@runtime_checkable
+class HTMLParser(Protocol):
+    """Extract structured content and metadata from raw HTML."""
+
+    def extract_content(self, html: str) -> str | None: ...
+
+    def extract_language(self, html: str) -> str: ...
+
+
+@runtime_checkable
+class VLMDescriber(Protocol):
+    """Generate a textual description of an image via a vision-language model."""
+
+    def describe(self, image_path: Path) -> str: ...
+
+
+@runtime_checkable
+class PromptBuilder(Protocol):
+    """Build the system prompt from a user question and retrieved chunks."""
+
+    def build_prompt(self, question: str, chunks: List[Dict]) -> str: ...

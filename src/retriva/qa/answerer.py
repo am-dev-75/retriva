@@ -14,10 +14,13 @@
 
 from openai import OpenAI
 from retriva.config import settings
-from retriva.qa.retriever import retrieve_top_chunks
-from retriva.qa.prompting import build_prompt
 from retriva.qa.grounding import validate_grounding
+from retriva.registry import CapabilityRegistry
 from retriva.logger import get_logger
+
+# Import modules to trigger default registrations
+import retriva.qa.retriever  # noqa: F401 — registers DefaultRetriever
+import retriva.qa.prompting  # noqa: F401 — registers DefaultPromptBuilder
 
 logger = get_logger(__name__)
 
@@ -26,10 +29,13 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     Full QA pipeline: Retrieve, Prompt, Generate Chat
     """
     logger.info(f"Processing question: {question}")
-    chunks = retrieve_top_chunks(question, retriever_top_k=retriever_top_k)
+    registry = CapabilityRegistry()
+    retriever = registry.get_instance("retriever")
+    chunks = retriever.retrieve(question, top_k=retriever_top_k)
     logger.info(f"Retrieved {len(chunks)} chunks for context.")
-    
-    system_prompt = build_prompt(question, chunks)
+
+    prompt_builder = registry.get_instance("prompt_builder")
+    system_prompt = prompt_builder.build_prompt(question, chunks)
     
     logger.debug(f"Connecting to chat model ({settings.chat_base_url})...")
     client = OpenAI(
@@ -69,10 +75,13 @@ def ask_question_streaming(question: str, retriever_top_k: int = 5):
     requires the full answer text.
     """
     logger.info(f"Processing question (streaming): {question}")
-    chunks = retrieve_top_chunks(question, retriever_top_k=retriever_top_k)
+    registry = CapabilityRegistry()
+    retriever = registry.get_instance("retriever")
+    chunks = retriever.retrieve(question, top_k=retriever_top_k)
     logger.info(f"Retrieved {len(chunks)} chunks for context.")
 
-    system_prompt = build_prompt(question, chunks)
+    prompt_builder = registry.get_instance("prompt_builder")
+    system_prompt = prompt_builder.build_prompt(question, chunks)
 
     logger.debug(f"Connecting to chat model (streaming) ({settings.chat_base_url})...")
     client = OpenAI(
