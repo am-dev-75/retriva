@@ -16,7 +16,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
-VERSION = "0.12.1"
+VERSION = "0.13.0"
 
 class Settings(BaseSettings):
     mirror_base_path: str = str((Path(__file__).resolve().parent / "mirror").resolve())
