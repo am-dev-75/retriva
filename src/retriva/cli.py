@@ -155,6 +155,126 @@ def run_ingest(
 
 
 # ---------------------------------------------------------------------------
+# MediaWiki export injector
+# ---------------------------------------------------------------------------
+
+def run_mediawiki_ingest(
+    target: Path,
+    api_url: str,
+    limit: int = 0,
+    namespaces: Set[int] | None = None,
+) -> None:
+    """
+    Discover and ingest MediaWiki XML export files under *target*.
+
+    1. Walk *target* for ``*.xml`` files validated as MediaWiki exports.
+    2. Find ``assets/`` directories and build a file index.
+    3. Parse each XML, convert wikitext to plain text, and POST to the API.
+    4. POST resolved image assets for VLM enrichment.
+    """
+    from retriva.ingestion.mediawiki_export_parser import (
+        is_mediawiki_export,
+        parse_export,
+        wikitext_to_plaintext,
+        DEFAULT_NAMESPACES,
+    )
+    from retriva.ingestion.mediawiki_assets import (
+        build_asset_index,
+        find_assets_dirs,
+        resolve_file_reference,
+        is_image_asset,
+    )
+
+    if namespaces is None:
+        namespaces = DEFAULT_NAMESPACES
+
+    # --- 1. Discover XML files ---
+    xml_files: list[Path] = []
+    if target.is_file():
+        if target.suffix.lower() == ".xml" and is_mediawiki_export(target):
+            xml_files.append(target)
+        else:
+            logger.error(f"'{target}' is not a valid MediaWiki XML export.")
+            return
+    else:
+        for path in sorted(target.rglob("*.xml")):
+            if is_mediawiki_export(path):
+                xml_files.append(path)
+
+    if not xml_files:
+        logger.warning(f"No MediaWiki XML export files found under '{target}'.")
+        return
+
+    logger.info(f"Found {len(xml_files)} MediaWiki XML export file(s).")
+
+    # --- 2. Build asset index ---
+    asset_index: dict[str, Path] = {}
+    for assets_dir in find_assets_dirs(target):
+        asset_index.update(build_asset_index(assets_dir))
+    logger.info(f"Asset index: {len(asset_index)} file(s) total.")
+
+    # --- 3. Parse and ingest pages ---
+    total = 0
+    for xml_path in xml_files:
+        logger.info(f"Parsing {xml_path}...")
+        for page in parse_export(xml_path, namespaces=namespaces):
+            if 0 < limit <= total:
+                logger.info(f"Reached limit ({limit}). Stopping.")
+                return
+
+            plaintext = wikitext_to_plaintext(page.text)
+            if not plaintext.strip():
+                logger.debug(f"Skipping empty page: {page.title}")
+                continue
+
+            # Resolve file references
+            resolved_assets = []
+            for ref in page.file_references:
+                resolved = resolve_file_reference(ref, asset_index)
+                if resolved:
+                    resolved_assets.append(str(resolved))
+                    logger.debug(f"Resolved asset: {ref} → {resolved}")
+                else:
+                    logger.debug(f"Unresolved asset: {ref}")
+
+            # POST page text
+            payload = {
+                "source_path": str(xml_path),
+                "page_title": page.title,
+                "content_text": plaintext,
+                "page_id": page.page_id,
+                "namespace": page.namespace,
+                "linked_assets": resolved_assets,
+            }
+            try:
+                r = requests.post(f"{api_url}/api/v1/ingest/mediawiki", json=payload)
+                r.raise_for_status()
+                total += 1
+                logger.info(f"[mediawiki] Uploaded page: {page.title}")
+            except Exception as e:
+                logger.error(f"Error uploading page '{page.title}': {e}")
+
+            # POST resolved image assets for VLM enrichment
+            for asset_path in resolved_assets:
+                if is_image_asset(Path(asset_path)):
+                    img_payload = {
+                        "source_path": asset_path,
+                        "page_title": Path(asset_path).stem,
+                        "file_path": asset_path,
+                    }
+                    try:
+                        r = requests.post(
+                            f"{api_url}/api/v1/ingest/image", json=img_payload
+                        )
+                        r.raise_for_status()
+                        logger.info(f"[image] Uploaded asset: {asset_path}")
+                    except Exception as e:
+                        logger.error(f"Error uploading image '{asset_path}': {e}")
+
+    logger.info(f"MediaWiki ingestion complete — {total} page(s) processed.")
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -188,6 +308,15 @@ def main():
             f"Supported: {', '.join(sorted(FILE_TYPE_REGISTRY))}"
         ),
     )
+    ingest_parser.add_argument(
+        "--injector", type=str, default=None,
+        choices=["mediawiki_export"],
+        help="Use a specialised injector instead of the default discovery pipeline.",
+    )
+    ingest_parser.add_argument(
+        "--namespaces", type=str, default=None,
+        help="Comma-separated MediaWiki namespace IDs to index (default: 0,6).",
+    )
 
     # ---- reindex: directory only ----
     reindex_parser = subparsers.add_parser(
@@ -211,6 +340,15 @@ def main():
             f"Supported: {', '.join(sorted(FILE_TYPE_REGISTRY))}"
         ),
     )
+    reindex_parser.add_argument(
+        "--injector", type=str, default=None,
+        choices=["mediawiki_export"],
+        help="Use a specialised injector instead of the default discovery pipeline.",
+    )
+    reindex_parser.add_argument(
+        "--namespaces", type=str, default=None,
+        help="Comma-separated MediaWiki namespace IDs to index (default: 0,6).",
+    )
 
     args = parser.parse_args()
     target = Path(args.path)
@@ -225,11 +363,24 @@ def main():
             )
         exclude.add(fmt)
 
+    # Parse --namespaces if provided
+    ns_set = None
+    if hasattr(args, 'namespaces') and args.namespaces:
+        try:
+            ns_set = {int(n.strip()) for n in args.namespaces.split(",")}
+        except ValueError:
+            parser.error(f"Invalid --namespaces value: '{args.namespaces}'. Use comma-separated integers.")
+
+    injector = getattr(args, 'injector', None)
+
     if args.command == "ingest":
         if not target.exists():
             logger.error(f"Path '{target}' does not exist.")
             return
-        run_ingest(target, args.api_url, args.limit, exclude or None)
+        if injector == "mediawiki_export":
+            run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
+        else:
+            run_ingest(target, args.api_url, args.limit, exclude or None)
 
     elif args.command == "reindex":
         if not target.is_dir():
@@ -242,7 +393,10 @@ def main():
         except Exception as e:
             logger.error(f"Failed to clear collection: {e}")
             return
-        run_ingest(target, args.api_url, args.limit, exclude or None)
+        if injector == "mediawiki_export":
+            run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
+        else:
+            run_ingest(target, args.api_url, args.limit, exclude or None)
 
 
 if __name__ == "__main__":

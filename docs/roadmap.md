@@ -1,8 +1,8 @@
 # Retriva Roadmap (excerpt)
 
-## Architectural foundations
-- Core + Extensions model
+## Current increment
+- add a MediaWiki native export injector alongside existing local HTML mirror ingestion
 
-## Follow-ups
-- Enterprise extension packs
-- Deployment assembly pipelines
+## Later increments
+- advanced MediaWiki-specific parsing refinements
+- export deduplication and revision policies

@@ -1,22 +1,23 @@
 ---
-description: Constitution for Core + Proprietary Extensions architecture
+description: Constitution for MediaWiki native export injector
 alwaysApply: true
 ---
 
-# Retriva Constitution — Core + Extensions
+# Retriva Constitution — MediaWiki Native Export Injector
 
 ## Product law
-- Retriva OSS is a complete, functional RAG system
-- Enterprise value is added through extensions, not forks
-- OSS users must never require proprietary code for correctness
+- Retriva must support ingestion from both static HTML mirrors and native MediaWiki export mirrors.
+- The native export input is a filesystem tree containing XML export files and exported assets.
+- The resulting indexed knowledge must remain grounded, cited, and compatible with existing QA flows.
 
 ## Architecture law
-- Core defines contracts and default implementations
-- Extensions provide alternative implementations
-- Selection happens through registration and composition
+- Introduce the export-mirror support as a **new injector implementation**.
+- Reuse shared chunking/indexing/citation abstractions where possible.
+- Preserve the current modular architecture and extension seams.
 
 ## Scope law
-Out of scope:
-- Licensing enforcement
-- Auth / RBAC
-- Build pipeline or packaging details
+Out of scope for this increment:
+- live MediaWiki API crawling
+- modifying the main retrieval architecture
+- OCR/VLM enrichment unless already independently supported
+- UI redesign

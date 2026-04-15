@@ -20,6 +20,14 @@ class ImageIngestRequest(BaseModel):
     page_title: str = Field("", description="Title of the page.")
     file_path: str = Field(..., description="Absolute path to the image file on disk.")
 
+class MediaWikiIngestRequest(BaseModel):
+    source_path: str = Field(..., description="Path to the source XML export file.")
+    page_title: str = Field(..., description="MediaWiki page title.")
+    content_text: str = Field(..., description="Plain text extracted from wikitext.")
+    page_id: int = Field(0, description="MediaWiki page ID.")
+    namespace: int = Field(0, description="MediaWiki namespace number.")
+    linked_assets: List[str] = Field(default_factory=list, description="Resolved local asset paths.")
+
 class ChunkIngestRequest(BaseModel):
     chunks: List[Chunk] = Field(..., description="List of completely raw Chunk objects.")
 

@@ -1,18 +1,23 @@
-# Agent Instructions — Retriva Core + Proprietary Extensions (Model 3)
+# Agent Instructions — Retriva MediaWiki Export Injector
 
 ## Mission
-Introduce a **Core + Extensions architecture** enabling Retriva to support an
-open-source core and proprietary/enterprise extensions without forks or feature flags.
+Add a new **injector** for indexing a **local MediaWiki native export mirror** consisting of:
+- one or more `*.xml` MediaWiki export files
+- an `assets/` directory containing exported images/files
+
+The new injector must be invokable recursively from the CLI, similarly to the existing local mirror ingestion flow.
 
 ## Order of authority
-1. `specs/009-core-plus-extensions/spec.md`
-2. `specs/009-core-plus-extensions/architecture.md`
+1. `specs/010-mediawiki-export-injector/spec.md`
+2. `docs/mediawiki-export-contract.md`
 3. `.agent/rules/retriva-constitution.md`
-4. `specs/009-core-plus-extensions/tasks.md`
+4. `specs/010-mediawiki-export-injector/architecture.md`
+5. `specs/010-mediawiki-export-injector/tasks.md`
 
 ## Non-negotiable rules
-- Do not modify the repository root README.md
-- The OSS core must not depend on proprietary code
-- Proprietary code may depend on the OSS core
-- All extension points must be explicit and documented
-- No build-time or runtime forks of the OSS core
+- Do not modify the repository root `README.md`
+- Preserve existing wget-mirror ingestion behavior
+- Implement this as a **new injector**, not a rewrite of the HTML injector
+- Directory traversal must be recursive from a user-supplied root path
+- The injector must support MediaWiki XML export + local assets/images
+- Keep API/CLI changes backward-compatible where possible
