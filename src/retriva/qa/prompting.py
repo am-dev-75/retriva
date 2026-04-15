@@ -16,21 +16,40 @@ from typing import List, Dict
 
 def build_prompt(question: str, retrieved_chunks: List[Dict]) -> str:
     """
-    Builds the grounded system prompt and user query safely formatted.
+    Builds the grounded system prompt with Open WebUI-compatible citations.
+
+    Open WebUI parses bracketed references (e.g. ``[Page Title]``) from the
+    LLM response text and turns them into clickable citation chips.  To make
+    this work the context blocks must carry identifiable source labels and
+    the LLM must be instructed to reference those labels.
     """
     context_str = ""
+    source_list = ""
     for idx, chunk in enumerate(retrieved_chunks):
         title = chunk.get("page_title", "Unknown Page")
-        url = chunk.get("canonical_doc_id", "Unknown URL")
+        url = chunk.get("canonical_doc_id", chunk.get("source_path", ""))
         text = chunk.get("text", "")
-        # Add a clear citation block
-        context_str += f"\n--- Document {idx+1} | Source: {title} ({url}) ---\n{text}\n"
-        
+        source_id = f"[{title}]"
+        # Build context block with source tag
+        context_str += (
+            f"\n<source id=\"{title}\">\n"
+            f"Source: {title}\n"
+            f"URL: {url}\n"
+            f"{text}\n"
+            f"</source>\n"
+        )
+        source_list += f"  - {source_id}\n"
+
     system_prompt = f"""You are Retriva, a grounded QA chatbot. Answer the user's question based ONLY on the provided context.
 If the context does not contain sufficient evidence to answer the question, you must explicitly refuse by stating:
 "I do not have sufficient evidence in my knowledge base to answer this question."
 
-Support your factual claims with citations in the format [Document X].
+CITATION RULES:
+- Support your factual claims with citations using the exact source names provided.
+- Use the format [Source Title] for each citation, e.g. {retrieved_chunks[0].get("page_title", "Example Page") if retrieved_chunks else "Example Page"}.
+- You may cite multiple sources in one sentence.
+- Available sources:
+{source_list}
 Identify the language of the user's question. Formulate your complete answer strictly in the exact language used by the user, even if the provided chunks are documented entirely in a different language.
 
 CONTEXT:

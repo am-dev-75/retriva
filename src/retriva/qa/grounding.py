@@ -35,15 +35,32 @@ def validate_grounding(answer: str, retrieved_chunks: List[Dict]) -> Dict:
     num_chunks = len(retrieved_chunks)
 
     # --- 1. Extract citations ---
-    citation_pattern = re.compile(r"\[Document\s+(\d+)\]", re.IGNORECASE)
-    cited_numbers = [int(m) for m in citation_pattern.findall(answer)]
-    unique_citations = sorted(set(cited_numbers))
+    # Match [Source Title] style (Open WebUI compatible) and legacy [Document N]
+    # Open WebUI format: any bracketed text that matches a known page title
+    known_titles = {
+        chunk.get("page_title", "") for chunk in retrieved_chunks if chunk.get("page_title")
+    }
+    bracket_pattern = re.compile(r"\[([^\]]+)\]")
+    all_brackets = bracket_pattern.findall(answer)
+
+    # Separate title-based citations from legacy numeric ones
+    legacy_pattern = re.compile(r"Document\s+(\d+)", re.IGNORECASE)
+    title_citations = [b for b in all_brackets if b in known_titles]
+    legacy_citations = []
+    for b in all_brackets:
+        m = legacy_pattern.match(b)
+        if m:
+            legacy_citations.append(int(m.group(1)))
+
+    unique_title_citations = sorted(set(title_citations))
+    unique_legacy_citations = sorted(set(legacy_citations))
+    has_citations = bool(unique_title_citations) or bool(unique_legacy_citations)
 
     # --- 2. Validate citation references ---
-    invalid_citations = [n for n in unique_citations if n < 1 or n > num_chunks]
+    invalid_citations = [n for n in unique_legacy_citations if n < 1 or n > num_chunks]
     citations_valid = len(invalid_citations) == 0
 
-    if not unique_citations:
+    if not has_citations:
         warnings.append("No citations found in the answer.")
     if invalid_citations:
         warnings.append(
@@ -61,7 +78,7 @@ def validate_grounding(answer: str, retrieved_chunks: List[Dict]) -> Dict:
     is_refusal = any(phrase in answer.lower() for phrase in refusal_phrases)
 
     # A refusal with no citations is expected and valid
-    if is_refusal and not unique_citations:
+    if is_refusal and not has_citations:
         warnings = [w for w in warnings if "No citations" not in w]
 
     # --- 4. Textual overlap (lightweight keyword check) ---
@@ -96,14 +113,15 @@ def validate_grounding(answer: str, retrieved_chunks: List[Dict]) -> Dict:
 
     # --- 5. Determine overall grounding status ---
     grounded = (
-        (len(unique_citations) > 0 or is_refusal)
+        (has_citations or is_refusal)
         and citations_valid
         and (overlap_score >= 0.4 or is_refusal)
     )
 
+    all_citations = unique_title_citations + [f"Document {n}" for n in unique_legacy_citations]
     result = {
         "grounded": grounded,
-        "citations_found": unique_citations,
+        "citations_found": all_citations,
         "citations_valid": citations_valid,
         "overlap_score": round(overlap_score, 3),
         "is_refusal": is_refusal,
@@ -115,7 +133,7 @@ def validate_grounding(answer: str, retrieved_chunks: List[Dict]) -> Dict:
             logger.warning(f"Grounding: {w}")
     else:
         logger.debug(
-            f"Grounding OK — {len(unique_citations)} citation(s), "
+            f"Grounding OK — {len(all_citations)} citation(s), "
             f"overlap={overlap_score:.0%}"
         )
 
