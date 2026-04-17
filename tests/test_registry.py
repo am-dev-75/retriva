@@ -20,11 +20,13 @@ def reset_registry():
     import retriva.ingestion.chunker
     import retriva.ingestion.html_parser
     import retriva.ingestion.vlm_describer
+    import retriva.ingestion.pdf_parser
     importlib.reload(retriva.qa.retriever)
     importlib.reload(retriva.qa.prompting)
     importlib.reload(retriva.ingestion.chunker)
     importlib.reload(retriva.ingestion.html_parser)
     importlib.reload(retriva.ingestion.vlm_describer)
+    importlib.reload(retriva.ingestion.pdf_parser)
 
 
 # -- Basic registration & resolution --------------------------------------

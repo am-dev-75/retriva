@@ -1,23 +1,23 @@
 ---
-description: Constitution for MediaWiki native export injector
+description: Constitution for PDF injector support
 alwaysApply: true
 ---
 
-# Retriva Constitution — MediaWiki Native Export Injector
+# Retriva Constitution — PDF Injector
 
 ## Product law
-- Retriva must support ingestion from both static HTML mirrors and native MediaWiki export mirrors.
-- The native export input is a filesystem tree containing XML export files and exported assets.
-- The resulting indexed knowledge must remain grounded, cited, and compatible with existing QA flows.
+- Retriva must support indexing local PDF documents as a first-class ingestion mode.
+- PDF-derived chunks must remain compatible with existing retrieval, grounding, and citation behavior.
+- OCR is not required for baseline PDF ingestion.
 
 ## Architecture law
-- Introduce the export-mirror support as a **new injector implementation**.
-- Reuse shared chunking/indexing/citation abstractions where possible.
-- Preserve the current modular architecture and extension seams.
+- Introduce PDF support as a dedicated injector implementation.
+- Reuse shared chunking, indexing, language metadata, and citation abstractions where possible.
+- Preserve modularity so OCR or advanced PDF enrichment can be added later without redesign.
 
 ## Scope law
 Out of scope for this increment:
-- live MediaWiki API crawling
-- modifying the main retrieval architecture
-- OCR/VLM enrichment unless already independently supported
+- mandatory OCR
+- table structure perfection beyond text extraction
 - UI redesign
+- replacing existing injectors

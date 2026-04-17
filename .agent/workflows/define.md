@@ -1,8 +1,8 @@
-# /define — MediaWiki Export Injector
+# /define — PDF Injector
 
 Read:
 - `AGENTS.md`
-- `docs/mediawiki-export-contract.md`
-- `specs/010-mediawiki-export-injector/`
+- `docs/pdf-injector-contract.md`
+- `specs/011-pdf-injector/`
 
 Then refine the feature package without expanding scope.

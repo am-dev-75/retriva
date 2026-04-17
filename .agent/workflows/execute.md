@@ -1,3 +1,3 @@
-# /execute — MediaWiki Export Injector
+# /execute — PDF Injector
 
-Implement only the approved tasks for the MediaWiki native export injector.
+Implement only the approved tasks for the PDF injector.

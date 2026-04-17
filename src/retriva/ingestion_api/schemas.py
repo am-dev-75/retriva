@@ -28,6 +28,13 @@ class MediaWikiIngestRequest(BaseModel):
     namespace: int = Field(0, description="MediaWiki namespace number.")
     linked_assets: List[str] = Field(default_factory=list, description="Resolved local asset paths.")
 
+class PdfIngestRequest(BaseModel):
+    source_path: str = Field(..., description="Absolute path to the PDF file.")
+    page_title: str = Field(..., description="Derived document title.")
+    content_text: str = Field(..., description="Plain text from one PDF page.")
+    page_number: int = Field(..., description="1-indexed page number.")
+    total_pages: int = Field(0, description="Total pages in the PDF.")
+
 class ChunkIngestRequest(BaseModel):
     chunks: List[Chunk] = Field(..., description="List of completely raw Chunk objects.")
 

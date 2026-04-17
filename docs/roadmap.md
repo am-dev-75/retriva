@@ -1,8 +1,8 @@
 # Retriva Roadmap (excerpt)
 
 ## Current increment
-- add a MediaWiki native export injector alongside existing local HTML mirror ingestion
+- add a PDF injector alongside existing local mirror and export injectors
 
 ## Later increments
-- advanced MediaWiki-specific parsing refinements
-- export deduplication and revision policies
+- OCR augmentation for scanned PDFs
+- advanced table and layout enrichment

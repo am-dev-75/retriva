@@ -1,7 +1,7 @@
-# /verify — MediaWiki Export Injector
+# /verify — PDF Injector
 
 Verify that:
-- recursive discovery finds XML export files and local assets
-- XML pages are converted into documents/chunks
-- citations/debug metadata remain usable
-- existing wget-mirror ingestion is not broken
+- recursive discovery finds PDFs
+- embedded text is extracted where available
+- page-aware chunks and citations remain usable
+- existing ingestion modes are not broken

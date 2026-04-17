@@ -60,3 +60,24 @@ class PromptBuilder(Protocol):
     """Build the system prompt from a user question and retrieved chunks."""
 
     def build_prompt(self, question: str, chunks: List[Dict]) -> str: ...
+
+
+@runtime_checkable
+class PdfExtractor(Protocol):
+    """Extract text page-by-page from a PDF file.
+
+    Implementations may use different backends (pdfplumber, pymupdf, pypdf).
+    The default is resolved via the CapabilityRegistry at key ``pdf_extractor``.
+    """
+
+    def extract_pages(self, pdf_path: Path) -> list | None:
+        """
+        Return a list of page dicts ``{"page_number": int, "text": str}``
+        for pages with extractable text, or ``None`` if the PDF is
+        unreadable (encrypted, corrupt).
+        """
+        ...
+
+    def extract_metadata(self, pdf_path: Path) -> dict[str, str]:
+        """Return PDF metadata (Title, Author, etc.) as a dict."""
+        ...

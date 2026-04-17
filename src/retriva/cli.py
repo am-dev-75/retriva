@@ -275,6 +275,89 @@ def run_mediawiki_ingest(
 
 
 # ---------------------------------------------------------------------------
+# PDF injector
+# ---------------------------------------------------------------------------
+
+def run_pdf_ingest(
+    target: Path,
+    api_url: str,
+    limit: int = 0,
+) -> None:
+    """
+    Discover and ingest PDF files under *target*.
+
+    1. Walk *target* for ``*.pdf`` files.
+    2. Parse each PDF page-by-page via the registry-resolved PdfExtractor.
+    3. POST each page to ``/api/v1/ingest/pdf``.
+    """
+    from retriva.ingestion.pdf_parser import parse_pdf
+
+    # --- 1. Discover PDF files ---
+    pdf_files: list[Path] = []
+    if target.is_file():
+        if target.suffix.lower() == ".pdf":
+            pdf_files.append(target)
+        else:
+            logger.error(f"'{target}' is not a PDF file.")
+            return
+    else:
+        pdf_files = sorted(target.rglob("*.pdf"))
+
+    if not pdf_files:
+        logger.warning(f"No PDF files found under '{target}'.")
+        return
+
+    logger.info(f"Found {len(pdf_files)} PDF file(s).")
+
+    # --- 2. Parse and ingest ---
+    total = 0
+    for pdf_path in pdf_files:
+        logger.info(f"Parsing {pdf_path}...")
+        doc = parse_pdf(pdf_path)
+        if doc is None:
+            logger.warning(f"Skipping unreadable PDF: {pdf_path}")
+            continue
+
+        if not doc.pages:
+            logger.warning(f"No extractable text in {pdf_path} — skipping.")
+            continue
+
+        if doc.skipped_pages > 0:
+            logger.info(
+                f"'{doc.title}': {doc.skipped_pages}/{doc.total_pages} "
+                f"page(s) had no extractable text."
+            )
+
+        for page in doc.pages:
+            if 0 < limit <= total:
+                logger.info(f"Reached limit ({limit}). Stopping.")
+                return
+
+            payload = {
+                "source_path": doc.source_path,
+                "page_title": doc.title,
+                "content_text": page.text,
+                "page_number": page.page_number,
+                "total_pages": doc.total_pages,
+            }
+            try:
+                r = requests.post(f"{api_url}/api/v1/ingest/pdf", json=payload)
+                r.raise_for_status()
+                total += 1
+                logger.info(
+                    f"[pdf] Uploaded page {page.page_number}/{doc.total_pages} "
+                    f"of '{doc.title}'"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error uploading page {page.page_number} "
+                    f"of '{doc.title}': {e}"
+                )
+
+    logger.info(f"PDF ingestion complete — {total} page(s) processed.")
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -310,7 +393,7 @@ def main():
     )
     ingest_parser.add_argument(
         "--injector", type=str, default=None,
-        choices=["mediawiki_export"],
+        choices=["mediawiki_export", "pdf"],
         help="Use a specialised injector instead of the default discovery pipeline.",
     )
     ingest_parser.add_argument(
@@ -342,7 +425,7 @@ def main():
     )
     reindex_parser.add_argument(
         "--injector", type=str, default=None,
-        choices=["mediawiki_export"],
+        choices=["mediawiki_export", "pdf"],
         help="Use a specialised injector instead of the default discovery pipeline.",
     )
     reindex_parser.add_argument(
@@ -379,6 +462,8 @@ def main():
             return
         if injector == "mediawiki_export":
             run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
+        elif injector == "pdf":
+            run_pdf_ingest(target, args.api_url, args.limit)
         else:
             run_ingest(target, args.api_url, args.limit, exclude or None)
 
@@ -395,6 +480,8 @@ def main():
             return
         if injector == "mediawiki_export":
             run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
+        elif injector == "pdf":
+            run_pdf_ingest(target, args.api_url, args.limit)
         else:
             run_ingest(target, args.api_url, args.limit, exclude or None)
 
