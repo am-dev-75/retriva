@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     indexing_batch_size: int = 50
 
     # Retrieving stuff
-    retriever_top_k: int = 200
+    retriever_top_k: int = 20
 
     # Extension discovery (comma-separated dotted module paths)
     retriva_extensions: str = ""
