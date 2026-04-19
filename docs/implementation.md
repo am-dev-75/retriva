@@ -1,15 +1,33 @@
 # Notes about the implementation
 
 - [Notes about the implementation](#notes-about-the-implementation)
+  - [Exposed APIs](#exposed-apis)
+    - [Ingestion API](#ingestion-api)
+    - [OpenAI API](#openai-api)
   - [Open WebUI Interfacing](#open-webui-interfacing)
     - [Streaming support](#streaming-support)
     - [Job cancellation support](#job-cancellation-support)
 
+## Exposed APIs
+
+Retriva exposes two APIs: an ingestion API and an OpenAI-compatible API.
+
+### Ingestion API
+
+The ingestion API is a proprietary REST API that is used to ingest documents into Retriva. It is located at `/api/v1/ingest` and is mainly used by
+* Retriva CLI
+* Open WebUI adapter.
+By default it runs on port 8000.
+
+### OpenAI API
+
+The OpenAI-compatible API is located at `/api/v1/chat/completions`. It allows any OpenAI-compatible client to provide questions for Retriva to answer. The answer is streamed back to the client, along with metadata about the answer. For instance [Open WebUI](https://github.com/open-webui/open-webui).
+
+Key design decision: the OpenAI-compatible API lives in a separate package (openai_api/) running by default on port 8001, keeping it cleanly decoupled from the ingestion API.
+
 ## Open WebUI Interfacing
 
-The implementation was made to allow Open WebUI to interface with Retriva. This was done by creating a new API endpoint that can be called by Open WebUI. The new API endpoint is located at `/api/v1/chat/completions` and is a drop-in replacement for the OpenAI API endpoint. Antigravity + Claude Opus 4.6 was used by following a SDD approach.
-
-Key design decision: the OpenAI-compatible API lives in a separate package (openai_api/) running on port 8001, keeping it cleanly decoupled from the ingestion API on port 8000. It's a pure adapter over the existing ask_question() pipeline — no QA code is modified..
+For interfacing Retriva with Open WebUI, [an auxiliary service](https://github.com/am-dev-75/open-webui_retriva-adapter) is required. This service allows to ingest new documents into Retriva's knowledge base by uploading them to Open WebUI's chats.
 
 ### Streaming support
 
