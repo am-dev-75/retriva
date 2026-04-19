@@ -8,7 +8,11 @@ handles parsing and sends one request per page for page-level
 citation granularity).
 """
 
-from fastapi import APIRouter, BackgroundTasks, status
+from fastapi import APIRouter, BackgroundTasks, status, UploadFile, File, Form
+import tempfile
+import os
+import shutil
+from pathlib import Path
 from retriva.ingestion_api.schemas import PdfIngestRequest, IngestResponse
 from retriva.domain.models import ParsedDocument
 from retriva.indexing.qdrant_store import get_client, upsert_chunks
@@ -74,6 +78,71 @@ def process_pdf_page_in_background(payload: PdfIngestRequest, job_id: str):
         logger.error(f"Job {job_id} failed: {e}")
 
 
+def process_pdf_upload_in_background(temp_path: str, source_path: str, page_title: str, job_id: str):
+    manager = JobManager()
+    manager.start_job(job_id)
+    cancel_check = lambda: manager.is_cancel_requested(job_id)
+
+    try:
+        from retriva.ingestion.pdf_parser import parse_pdf
+        
+        logger.debug(f"Parsing uploaded PDF file from temporary path: {temp_path}")
+        doc = parse_pdf(Path(temp_path))
+        if doc is None:
+            logger.warning(f"Skipping unreadable PDF upload: {source_path}")
+            manager.complete_job(job_id)
+            return
+
+        if not doc.pages:
+            logger.warning(f"No extractable text in PDF upload {source_path} — skipping.")
+            manager.complete_job(job_id)
+            return
+
+        registry = CapabilityRegistry()
+        chunker = registry.get_instance("chunker")
+        client = get_client()
+
+        chunks = []
+        for page in doc.pages:
+            if cancel_check():
+                break
+
+            doc_id = f"{source_path}#p{page.page_number}"
+            parsed_doc = ParsedDocument(
+                source_path=source_path,
+                canonical_doc_id=doc_id,
+                page_title=page_title or doc.title,
+                content_text=page.text,
+                images=[],
+            )
+
+            page_chunks = chunker.create_chunks(parsed_doc)
+            for chunk in page_chunks:
+                chunk.metadata.section_path = f"Page {page.page_number}"
+            
+            chunks.extend(page_chunks)
+
+        if cancel_check():
+            raise CancellationError("Job cancelled before upserting chunks")
+            
+        upsert_chunks(client, chunks, cancel_check=cancel_check)
+        manager.complete_job(job_id)
+
+        logger.info(
+            f"PDF file '{page_title or doc.title}' indexed — {len(doc.pages)} pages, {len(chunks)} chunk(s)"
+        )
+
+    except CancellationError:
+        manager.mark_cancelled(job_id)
+        logger.info(f"Job {job_id} cancelled during PDF upload processing")
+    except Exception as e:
+        manager.fail_job(job_id, str(e))
+        logger.error(f"Job {job_id} failed: {e}")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
 @router.post(
     "/pdf",
     response_model=IngestResponse,
@@ -97,5 +166,43 @@ async def ingest_pdf(
             f"PDF page {payload.page_number} of "
             f"'{payload.page_title}' accepted for processing"
         ),
+        job_id=job.id,
+    )
+
+
+@router.post(
+    "/upload/pdf",
+    response_model=IngestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_pdf_upload(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    source_path: str = Form(...),
+    page_title: str = Form(None),
+):
+    """Ingest a raw PDF file upload."""
+    logger.debug(f"Received PDF file upload: '{file.filename}'")
+    manager = JobManager()
+    job = manager.create_job(source=source_path, job_type="pdf_upload")
+    
+    # Save the file to a temporary location
+    temp_fd, temp_path = tempfile.mkstemp(suffix=".pdf")
+    os.close(temp_fd)
+    
+    with open(temp_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+        
+    background_tasks.add_task(
+        process_pdf_upload_in_background, 
+        temp_path, 
+        source_path, 
+        page_title or file.filename, 
+        job.id
+    )
+    
+    return IngestResponse(
+        status="accepted",
+        message=f"PDF file '{file.filename}' accepted for processing",
         job_id=job.id,
     )
