@@ -25,18 +25,36 @@ class Citation(BaseModel):
     language: Optional[str] = Field("en", description="Source document language")
 
 
+class CitationRef(BaseModel):
+    start_index: int = Field(..., description="Start character index in the output_text")
+    end_index: int = Field(..., description="End character index in the output_text")
+    citation_index: int = Field(..., description="Index of the citation in the citations array")
+
+
 class MessageMetadata(BaseModel):
     citations: List[Citation] = Field(default_factory=list)
+    citation_refs: List[CitationRef] = Field(default_factory=list)
+    output_text: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
 # Chat messages
 # ---------------------------------------------------------------------------
 
+class ToolCallFunction(BaseModel):
+    name: str
+    arguments: str
+
+class ToolCall(BaseModel):
+    id: str
+    type: str = "function"
+    function: ToolCallFunction
+
 class ChatMessage(BaseModel):
     role: str = Field(..., description="One of: system, user, assistant")
     content: str = Field(..., description="Message text")
     metadata: Optional[MessageMetadata] = None
+    tool_calls: Optional[List[ToolCall]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +101,8 @@ class ChatCompletionResponse(BaseModel):
 class DeltaContent(BaseModel):
     role: Optional[str] = None
     content: Optional[str] = None
+    tool_calls: Optional[List[ToolCall]] = None
+    metadata: Optional[MessageMetadata] = None
 
 
 class StreamingChoice(BaseModel):

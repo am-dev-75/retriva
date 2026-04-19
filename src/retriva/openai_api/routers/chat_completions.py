@@ -16,6 +16,9 @@ from retriva.openai_api.schemas import (
     UsageInfo,
     DeltaContent,
     StreamingChoice,
+    CitationRef,
+    ToolCall,
+    ToolCallFunction,
 )
 from retriva.qa.answerer import ask_question, ask_question_streaming
 from retriva.config import settings
@@ -65,6 +68,87 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def _build_citation_refs(answer: str, citations: list[Citation]) -> tuple[str, str, list[CitationRef], list[ToolCall]]:
+    """
+    Parse [Title] markers from the answer, map the preceding sentence to a CitationRef.
+    Returns (clean_text, compat_text, citation_refs, tool_calls).
+    """
+    import re
+    title_to_idx = {c.title: i for i, c in enumerate(citations) if c.title}
+    
+    # Regex to find [Title]
+    pattern = r'\[([^\]]+)\]'
+    
+    clean_text = ""
+    compat_text = ""
+    citation_refs = []
+    
+    last_end = 0
+    current_clean_index = 0
+    
+    for match in re.finditer(pattern, answer):
+        title = match.group(1)
+        if title in title_to_idx:
+            citation_idx = title_to_idx[title]
+            
+            text_segment = answer[last_end:match.start()]
+            clean_text += text_segment
+            compat_text += text_segment
+            
+            end_index = current_clean_index + len(text_segment)
+            start_index = current_clean_index
+            
+            # Try to find the start of the sentence
+            sentence_start = text_segment.rfind('.')
+            if sentence_start != -1:
+                start_index = current_clean_index + sentence_start + 1
+            else:
+                nl_start = text_segment.rfind('\n')
+                if nl_start != -1:
+                    start_index = current_clean_index + nl_start + 1
+            
+            # Strip leading whitespace
+            while start_index < end_index and clean_text[start_index].isspace():
+                start_index += 1
+                
+            citation_refs.append(
+                CitationRef(
+                    start_index=max(0, start_index),
+                    end_index=end_index,
+                    citation_index=citation_idx
+                )
+            )
+            
+            compat_text += f"[{citation_idx + 1}]"
+            
+            current_clean_index = end_index
+            last_end = match.end()
+        else:
+            # Not a known citation, leave it in the text
+            text_segment = answer[last_end:match.end()]
+            clean_text += text_segment
+            compat_text += text_segment
+            current_clean_index += len(text_segment)
+            last_end = match.end()
+            
+    clean_text += answer[last_end:]
+    compat_text += answer[last_end:]
+    
+    tool_calls = []
+    if citations:
+        tool_calls.append(
+            ToolCall(
+                id=f"call_{uuid.uuid4().hex[:10]}",
+                function=ToolCallFunction(
+                    name="citation",
+                    arguments=json.dumps({"citations": [c.model_dump() for c in citations]})
+                )
+            )
+        )
+        
+    return clean_text, compat_text, citation_refs, tool_calls
+
+
 # ---------------------------------------------------------------------------
 # Non-streaming handler (existing behaviour, unchanged)
 # ---------------------------------------------------------------------------
@@ -84,6 +168,8 @@ def _handle_non_streaming(
     answer = result["answer"]
     chunks = result.get("retrieved_chunks", [])
     citations = _build_citations(chunks)
+    
+    clean_text, compat_text, citation_refs, tool_calls = _build_citation_refs(answer, citations)
 
     # Build the prompt text for token estimation (system + user)
     prompt_text = question
@@ -97,16 +183,21 @@ def _handle_non_streaming(
                 index=0,
                 message=ChatMessage(
                     role="assistant",
-                    content=answer,
-                    metadata=MessageMetadata(citations=citations),
+                    content=compat_text,
+                    metadata=MessageMetadata(
+                        citations=citations,
+                        citation_refs=citation_refs,
+                        output_text=clean_text
+                    ),
+                    tool_calls=tool_calls if tool_calls else None
                 ),
                 finish_reason="stop",
             )
         ],
         usage=UsageInfo(
             prompt_tokens=_estimate_tokens(prompt_text),
-            completion_tokens=_estimate_tokens(answer),
-            total_tokens=_estimate_tokens(prompt_text) + _estimate_tokens(answer),
+            completion_tokens=_estimate_tokens(compat_text),
+            total_tokens=_estimate_tokens(prompt_text) + _estimate_tokens(compat_text),
         ),
     )
 
@@ -149,38 +240,132 @@ def _handle_streaming(
                 )
             ],
         )
-        yield f"data: {first_chunk.model_dump_json()}\n\n"
+        yield f"data: {first_chunk.model_dump_json(exclude_none=True)}\n\n"
 
-        # Content events: one per token
+        citations = _build_citations(_chunks) if _chunks else []
+        title_to_idx = {c.title: i for i, c in enumerate(citations) if c.title}
+        
+        buffer = ""
+        out_chunk = ""
+        inside_bracket = False
+        clean_text_so_far = ""
+        citation_refs = []
+
+        # Content events: character by character processing
         try:
             for token in content_gen:
+                for char in token:
+                    if not inside_bracket:
+                        if char == '[':
+                            inside_bracket = True
+                            buffer += char
+                        else:
+                            out_chunk += char
+                            clean_text_so_far += char
+                    else:
+                        buffer += char
+                        if char == ']':
+                            inside_bracket = False
+                            content = buffer[1:-1]
+                            if content in title_to_idx:
+                                citation_idx = title_to_idx[content]
+                                end_index = len(clean_text_so_far)
+                                
+                                sentence_start = clean_text_so_far.rfind('.')
+                                if sentence_start != -1:
+                                    start_index = sentence_start + 1
+                                else:
+                                    nl_start = clean_text_so_far.rfind('\n')
+                                    if nl_start != -1:
+                                        start_index = nl_start + 1
+                                    else:
+                                        start_index = 0
+                                        
+                                while start_index < end_index and clean_text_so_far[start_index].isspace():
+                                    start_index += 1
+                                    
+                                citation_refs.append(
+                                    CitationRef(
+                                        start_index=max(0, start_index),
+                                        end_index=end_index,
+                                        citation_index=citation_idx
+                                    )
+                                )
+                                
+                                out_chunk += f"[{citation_idx + 1}]"
+                            else:
+                                out_chunk += buffer
+                                clean_text_so_far += buffer
+                            buffer = ""
+                
+                if out_chunk:
+                    chunk = ChatCompletionChunk(
+                        id=completion_id,
+                        choices=[
+                            StreamingChoice(
+                                index=0,
+                                delta=DeltaContent(content=out_chunk),
+                                finish_reason=None,
+                            )
+                        ],
+                    )
+                    yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+                    out_chunk = ""
+
+            if buffer:
                 chunk = ChatCompletionChunk(
                     id=completion_id,
                     choices=[
                         StreamingChoice(
                             index=0,
-                            delta=DeltaContent(content=token),
+                            delta=DeltaContent(content=buffer),
                             finish_reason=None,
                         )
                     ],
                 )
-                yield f"data: {chunk.model_dump_json()}\n\n"
+                yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+                clean_text_so_far += buffer
+                
         except Exception as e:
             logger.error(f"Streaming error mid-flight: {e}")
             # Close the stream gracefully — client will see truncated output
 
-        # Final event: stop signal
+        # Generate tool calls envelope for streaming at the end
+        tool_calls = []
+        if _chunks:
+            citations = _build_citations(_chunks)
+            if citations:
+                tool_calls.append(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:10]}",
+                        function=ToolCallFunction(
+                            name="citation",
+                            arguments=json.dumps({"citations": [c.model_dump() for c in citations]})
+                        )
+                    )
+                )
+
+        # Final event: stop signal with tool_calls and metadata
+        metadata_payload = MessageMetadata(
+            citations=citations,
+            citation_refs=citation_refs,
+            output_text=clean_text_so_far
+        ) if citations else None
+        
         stop_chunk = ChatCompletionChunk(
             id=completion_id,
             choices=[
                 StreamingChoice(
                     index=0,
-                    delta=DeltaContent(),
+                    delta=DeltaContent(
+                        tool_calls=tool_calls if tool_calls else None,
+                        metadata=metadata_payload
+                    ),
                     finish_reason="stop",
                 )
             ],
         )
-        yield f"data: {stop_chunk.model_dump_json()}\n\n"
+        yield f"data: {stop_chunk.model_dump_json(exclude_none=True)}\n\n"
 
         # Terminator
         yield "data: [DONE]\n\n"
