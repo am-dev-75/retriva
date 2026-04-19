@@ -23,6 +23,17 @@ def main():
     )
     args = parser.parse_args()
 
+    s = config.settings
+    print("Active settings:")
+    print(f"  Chat model:           {s.chat_model}")
+    print(f"  Chat base URL:        {s.chat_base_url}")
+    print(f"  Chat temperature:     {s.chat_temperature}")
+    print(f"  Chat top_p:           {s.chat_top_p}")
+    print(f"  Retriever top_k:      {s.retriever_top_k}")
+    print(f"  Qdrant URL:           {s.qdrant_url}")
+    print(f"  Embedding model:      {s.embedding_model}")
+    print(f"  Embedding dimension:  {s.embedding_dimension}")
+    print()
     print(f"Starting OpenAI-compatible API on {args.host}:{args.port}...")
     uvicorn.run(
         "retriva.openai_api.main:app",
