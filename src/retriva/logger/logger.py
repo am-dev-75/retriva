@@ -33,6 +33,13 @@ def setup_logging():
             logging.StreamHandler(sys.stdout)
         ]
     )
+    
+    # Silence uvicorn's default handlers and propagate to root.
+    # This ensures Uvicorn logs (access/error) follow our global format.
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging_logger = logging.getLogger(logger_name)
+        logging_logger.handlers = []
+        logging_logger.propagate = True
 
 def get_logger(name: str) -> logging.Logger:
     """

@@ -40,6 +40,7 @@ def main():
         host=args.host,
         port=args.port,
         reload=False,
+        log_config=None,
     )
 
 
