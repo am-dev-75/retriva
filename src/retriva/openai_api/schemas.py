@@ -19,10 +19,9 @@ import uuid
 # ---------------------------------------------------------------------------
 
 class Citation(BaseModel):
-    document_id: str = Field(..., description="Source path or canonical document ID")
-    title: str = Field("", description="Page title from chunk metadata")
-    source: str = Field("", description="Source URL or filesystem path")
-    language: Optional[str] = Field("en", description="Source document language")
+    source: dict = Field(..., description="Source identification (e.g. {'name': '...'})")
+    document: List[str] = Field(..., description="The actual text content(s) being cited")
+    metadata: Optional[List[dict]] = Field(None, description="Metadata for each document")
 
 
 class CitationRef(BaseModel):
@@ -32,7 +31,7 @@ class CitationRef(BaseModel):
 
 
 class MessageMetadata(BaseModel):
-    citations: List[Citation] = Field(default_factory=list)
+    sources: List[Citation] = Field(default_factory=list)
     citation_refs: List[CitationRef] = Field(default_factory=list)
     output_text: Optional[str] = None
 
@@ -42,7 +41,7 @@ class MessageMetadata(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ToolCallFunction(BaseModel):
-    name: str
+    name: Optional[str] = None
     arguments: str
 
 class ToolCall(BaseModel):
@@ -92,6 +91,7 @@ class ChatCompletionResponse(BaseModel):
     model: str = "retriva"
     choices: List[ChatChoice]
     usage: UsageInfo = Field(default_factory=UsageInfo)
+    sources: Optional[List[Citation]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +117,8 @@ class ChatCompletionChunk(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str = "retriva"
     choices: List[StreamingChoice]
+    metadata: Optional[MessageMetadata] = None
+    sources: Optional[List[Citation]] = None
 
 
 # ---------------------------------------------------------------------------

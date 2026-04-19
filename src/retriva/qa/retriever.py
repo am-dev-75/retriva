@@ -27,6 +27,8 @@ def retrieve_top_chunks(query: str, retriever_top_k: int = 5) -> List[Dict]:
     
     client = get_client()
     results = search_chunks(client, query_vector, retriever_top_k=retriever_top_k)
+    for i, res in enumerate(results):
+        logger.info(f"  Chunk {i+1}: {res.get('page_title')} (path: {res.get('source_path')})")
     return results
 
 

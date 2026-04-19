@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -20,7 +21,14 @@ from retriva.openai_api.schemas import (
     ToolCall,
     ToolCallFunction,
 )
-from retriva.qa.answerer import ask_question, ask_question_streaming
+from retriva.qa.answerer import (
+    ask_question, 
+    ask_question_streaming,
+    ask_question_streaming_async,
+    ask_question_without_retrieval,
+    ask_question_streaming_without_retrieval,
+    ask_question_streaming_without_retrieval_async
+)
 from retriva.config import settings
 from retriva.logger import get_logger
 
@@ -43,24 +51,36 @@ def _extract_user_question(request: ChatCompletionRequest) -> str:
     )
 
 
+import re
+
 def _build_citations(chunks: list[dict]) -> list[Citation]:
-    """Extract citation metadata from retrieved chunk payloads."""
-    seen = set()
-    citations = []
+    """Extract citation metadata from retrieved chunk payloads in Open WebUI format."""
+    by_norm_title = {}
     for chunk in chunks:
-        doc_id = chunk.get("doc_id", chunk.get("source_path", ""))
-        if doc_id in seen:
-            continue
-        seen.add(doc_id)
-        citations.append(
-            Citation(
-                document_id=doc_id,
-                title=chunk.get("page_title", ""),
-                source=chunk.get("source_path", ""),
-                language=chunk.get("language", "en")
-            )
-        )
-    return citations
+        # Group by normalized title (alphanumeric only)
+        raw_title = chunk.get("page_title") or Path(chunk.get("source_path", "unknown")).name or "Unknown Source"
+        # Aggressive normalization for grouping
+        norm_key = re.sub(r'[^a-z0-9]', '', raw_title.lower())
+        
+        path = chunk.get("source_path", "unknown")
+        text = chunk.get("text", "")
+        
+        if norm_key not in by_norm_title:
+            by_norm_title[norm_key] = {
+                "source": {"name": raw_title},
+                "document": [text],
+                "metadata": [{"source": path, "title": raw_title}]
+            }
+        else:
+            # Add to existing title group
+            by_norm_title[norm_key]["document"].append(text)
+            # Only add unique source paths to metadata
+            if not any(m["source"] == path for m in by_norm_title[norm_key]["metadata"]):
+                by_norm_title[norm_key]["metadata"].append({"source": path, "title": raw_title})
+
+    results = [Citation(**v) for v in by_norm_title.values()]
+    logger.info(f"Grouped {len(chunks)} chunks into {len(results)} unique citations.")
+    return results
 
 
 def _estimate_tokens(text: str) -> int:
@@ -74,7 +94,7 @@ def _build_citation_refs(answer: str, citations: list[Citation]) -> tuple[str, s
     Returns (clean_text, compat_text, citation_refs, tool_calls).
     """
     import re
-    title_to_idx = {c.title: i for i, c in enumerate(citations) if c.title}
+    title_to_idx = {c.source["name"]: i for i, c in enumerate(citations) if c.source.get("name")}
     
     # Regex to find [Title]
     pattern = r'\[([^\]]+)\]'
@@ -153,11 +173,18 @@ def _build_citation_refs(answer: str, citations: list[Citation]) -> tuple[str, s
 # Non-streaming handler (existing behaviour, unchanged)
 # ---------------------------------------------------------------------------
 
-def _handle_non_streaming(
-    request: ChatCompletionRequest, question: str
+async def _handle_non_streaming(
+    request: ChatCompletionRequest, question: str, bypass_rag: bool = False
 ) -> ChatCompletionResponse:
+    """Handle standard non-streaming request with optional RAG."""
+    from starlette.concurrency import run_in_threadpool
     try:
-        result = ask_question(question, settings.retriever_top_k)
+        if bypass_rag:
+            # Simple direct answer without retrieval
+            answer = await run_in_threadpool(ask_question_without_retrieval, question)
+            result = {"answer": answer, "retrieved_chunks": []}
+        else:
+            result = await run_in_threadpool(ask_question, question, settings.retriever_top_k)
     except Exception as e:
         logger.error(f"QA pipeline error: {e}")
         raise HTTPException(
@@ -185,7 +212,7 @@ def _handle_non_streaming(
                     role="assistant",
                     content=compat_text,
                     metadata=MessageMetadata(
-                        citations=citations,
+                        sources=citations,
                         citation_refs=citation_refs,
                         output_text=clean_text
                     ),
@@ -199,6 +226,7 @@ def _handle_non_streaming(
             completion_tokens=_estimate_tokens(compat_text),
             total_tokens=_estimate_tokens(prompt_text) + _estimate_tokens(compat_text),
         ),
+        sources=citations,
     )
 
     logger.debug(
@@ -212,15 +240,19 @@ def _handle_non_streaming(
 # Streaming handler (new — SSE delta protocol)
 # ---------------------------------------------------------------------------
 
-def _handle_streaming(
-    request: ChatCompletionRequest, question: str
+async def _handle_streaming(
+    request: ChatCompletionRequest, question: str, bypass_rag: bool = False
 ) -> StreamingResponse:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-
+    from starlette.concurrency import run_in_threadpool
+    
     try:
-        _chunks, content_gen = ask_question_streaming(
-            question, settings.retriever_top_k
-        )
+        if bypass_rag:
+             chunks, content_gen = await ask_question_streaming_without_retrieval_async(question)
+        else:
+            chunks, content_gen = await ask_question_streaming_async(
+                question, settings.retriever_top_k
+            )
     except Exception as e:
         logger.error(f"QA pipeline error (streaming init): {e}")
         raise HTTPException(
@@ -228,7 +260,7 @@ def _handle_streaming(
             detail=f"QA pipeline error: {e}",
         )
 
-    def _sse_generator():
+    async def _sse_generator():
         # First event: role announcement
         first_chunk = ChatCompletionChunk(
             id=completion_id,
@@ -242,8 +274,36 @@ def _handle_streaming(
         )
         yield f"data: {first_chunk.model_dump_json(exclude_none=True)}\n\n"
 
-        citations = _build_citations(_chunks) if _chunks else []
-        title_to_idx = {c.title: i for i, c in enumerate(citations) if c.title}
+        citations = await run_in_threadpool(_build_citations, chunks) if chunks else []
+        
+        # Build a robust mapping from any possible title/path to the grouped citation index
+        path_to_idx = {}
+        for i, c in enumerate(citations):
+            for meta in c.metadata:
+                path_to_idx[meta["source"]] = i
+        
+        title_to_idx = {}
+        for chunk in chunks:
+            path = chunk.get("source_path", "unknown")
+            if path in path_to_idx:
+                idx = path_to_idx[path]
+                # Map both the page title and the raw filename to this citation index
+                title = chunk.get("page_title")
+                if title:
+                    title_to_idx[title] = idx
+                
+                filename = Path(path).name.lower()
+                title_to_idx[filename] = idx
+                # Also map without extension
+                title_to_idx[Path(path).stem.lower()] = idx
+                # Also map the display title we generated
+                display_title = citations[idx].source.get("name")
+                if display_title:
+                    display_title = display_title.lower()
+                    title_to_idx[display_title] = idx
+                    title_to_idx[display_title.replace(' ', '')] = idx
+                    if '.' in display_title:
+                         title_to_idx[display_title.rsplit('.', 1)[0]] = idx
         
         buffer = ""
         out_chunk = ""
@@ -253,7 +313,7 @@ def _handle_streaming(
 
         # Content events: character by character processing
         try:
-            for token in content_gen:
+            async for token in content_gen:
                 for char in token:
                     if not inside_bracket:
                         if char == '[':
@@ -266,9 +326,26 @@ def _handle_streaming(
                         buffer += char
                         if char == ']':
                             inside_bracket = False
-                            content = buffer[1:-1]
+                            content = buffer[1:-1].strip().lower()
+                            
+                            citation_idx = None
                             if content in title_to_idx:
                                 citation_idx = title_to_idx[content]
+                            else:
+                                # Fuzzy match for truncated titles
+                                clean_content = content.replace('...', '')
+                                for t, i in title_to_idx.items():
+                                    if len(clean_content) > 10:
+                                        prefix = clean_content[:10]
+                                        suffix = clean_content[-10:]
+                                        if t.startswith(prefix) and t.endswith(suffix):
+                                            citation_idx = i
+                                            break
+                                    if len(content) > 5 and (t.startswith(content) or t.endswith(content)):
+                                        citation_idx = i
+                                        break
+
+                            if citation_idx is not None:
                                 end_index = len(clean_text_so_far)
                                 
                                 sentence_start = clean_text_so_far.rfind('.')
@@ -330,24 +407,25 @@ def _handle_streaming(
             logger.error(f"Streaming error mid-flight: {e}")
             # Close the stream gracefully — client will see truncated output
 
-        # Generate tool calls envelope for streaming at the end
-        tool_calls = []
-        if _chunks:
-            citations = _build_citations(_chunks)
-            if citations:
-                tool_calls.append(
-                    ToolCall(
-                        id=f"call_{uuid.uuid4().hex[:10]}",
-                        function=ToolCallFunction(
-                            name="citation",
-                            arguments=json.dumps({"citations": [c.model_dump() for c in citations]})
-                        )
-                    )
+        # Prepare truncated sources for metadata to stay well under the 16KB limit
+        truncated_sources = []
+        for c in citations:
+            # Join the first 5 fragments into a single document string
+            joined_doc = "\n\n---\n\n".join(c.document[:5])
+            if len(joined_doc) > 2000:
+                joined_doc = joined_doc[:2000] + "..."
+                
+            truncated_sources.append(
+                Citation(
+                    source=c.source,
+                    document=[joined_doc], # Still a list, but with ONE joined item
+                    metadata=c.metadata[:5]
                 )
+            )
 
-        # Final event: stop signal with tool_calls and metadata
+        # Final event: stop signal with metadata (no top-level sources)
         metadata_payload = MessageMetadata(
-            citations=citations,
+            sources=truncated_sources,
             citation_refs=citation_refs,
             output_text=clean_text_so_far
         ) if citations else None
@@ -357,18 +435,20 @@ def _handle_streaming(
             choices=[
                 StreamingChoice(
                     index=0,
-                    delta=DeltaContent(
-                        tool_calls=tool_calls if tool_calls else None,
-                        metadata=metadata_payload
-                    ),
+                    delta=DeltaContent(),
                     finish_reason="stop",
                 )
             ],
+            metadata=metadata_payload,
+            sources=truncated_sources
         )
-        yield f"data: {stop_chunk.model_dump_json(exclude_none=True)}\n\n"
-
-        # Terminator
+        
+        final_json = stop_chunk.model_dump_json(exclude_none=True)
+        logger.debug(f"FINAL CHUNK JSON: {final_json[:500]}...")
+        yield f"data: {final_json}\n\n"
         yield "data: [DONE]\n\n"
+
+
 
     return StreamingResponse(
         _sse_generator(),
@@ -390,12 +470,17 @@ async def create_chat_completion(request: ChatCompletionRequest):
     following the OpenAI delta protocol.
     """
     question = _extract_user_question(request)
+    
+    bypass_rag = question.startswith("### Task:")
+    if bypass_rag:
+        logger.info("System task detected, bypassing RAG.")
+    
     logger.info(
         f"Chat completion request (stream={request.stream}) — "
         f"question: {question[:120]}..."
     )
 
     if request.stream:
-        return _handle_streaming(request, question)
+        return await _handle_streaming(request, question, bypass_rag=bypass_rag)
     else:
-        return _handle_non_streaming(request, question)
+        return await _handle_non_streaming(request, question, bypass_rag=bypass_rag)

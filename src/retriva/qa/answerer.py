@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from retriva.config import settings
 from retriva.qa.grounding import validate_grounding
 from retriva.registry import CapabilityRegistry
@@ -31,7 +31,11 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     logger.info(f"Processing question: {question}")
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    chunks = retriever.retrieve(question, top_k=retriever_top_k)
+    
+    # Sanitize question
+    sanitized_question = question.replace('"', '').replace("'", "").strip()
+    
+    chunks = retriever.retrieve(sanitized_question, top_k=retriever_top_k)
     logger.info(f"Retrieved {len(chunks)} chunks for context.")
 
     prompt_builder = registry.get_instance("prompt_builder")
@@ -77,7 +81,11 @@ def ask_question_streaming(question: str, retriever_top_k: int = 5):
     logger.info(f"Processing question (streaming): {question}")
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    chunks = retriever.retrieve(question, top_k=retriever_top_k)
+    
+    # Sanitize question: remove ALL quotes for the embedding call to avoid provider issues
+    sanitized_question = question.replace('"', '').replace("'", "").strip()
+    
+    chunks = retriever.retrieve(sanitized_question, top_k=retriever_top_k)
     logger.info(f"Retrieved {len(chunks)} chunks for context.")
 
     prompt_builder = registry.get_instance("prompt_builder")
@@ -106,3 +114,101 @@ def ask_question_streaming(question: str, retriever_top_k: int = 5):
                 yield chunk.choices[0].delta.content
 
     return chunks, content_generator()
+
+
+def ask_question_without_retrieval(question: str) -> str:
+    """Direct LLM call without retrieval."""
+    client = OpenAI(
+        api_key=settings.chat_openai_api_key,
+        base_url=settings.chat_base_url
+    )
+    response = client.chat.completions.create(
+        model=settings.chat_model,
+        messages=[{"role": "user", "content": question}],
+        temperature=settings.chat_temperature,
+    )
+    return response.choices[0].message.content
+
+
+def ask_question_streaming_without_retrieval(question: str):
+    """Direct streaming LLM call without retrieval."""
+    client = OpenAI(
+        api_key=settings.chat_openai_api_key,
+        base_url=settings.chat_base_url
+    )
+    stream = client.chat.completions.create(
+        model=settings.chat_model,
+        messages=[{"role": "user", "content": question}],
+        temperature=settings.chat_temperature,
+        stream=True,
+    )
+
+    def content_generator():
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    return [], content_generator()
+
+async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
+    """
+    Asynchronous streaming variant of ask_question().
+    """
+    logger.info(f"Processing question (async streaming): {question}")
+    registry = CapabilityRegistry()
+    retriever = registry.get_instance("retriever")
+    
+    # Sanitize question
+    sanitized_question = question.replace('"', '').replace("'", "").strip()
+    
+    # Retrieval is still sync for now, run in threadpool if needed
+    from starlette.concurrency import run_in_threadpool
+    chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k)
+    logger.info(f"Retrieved {len(chunks)} chunks for context.")
+
+    prompt_builder = registry.get_instance("prompt_builder")
+    system_prompt = prompt_builder.build_prompt(question, chunks)
+
+    client = AsyncOpenAI(
+        api_key=settings.chat_openai_api_key,
+        base_url=settings.chat_base_url,
+    )
+
+    stream = await client.chat.completions.create(
+        model=settings.chat_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ],
+        temperature=settings.chat_temperature,
+        top_p=settings.chat_top_p,
+        stream=True,
+    )
+
+    async def content_generator():
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    return chunks, content_generator()
+
+
+async def ask_question_streaming_without_retrieval_async(question: str):
+    """Asynchronous direct streaming LLM call without retrieval."""
+    client = AsyncOpenAI(
+        api_key=settings.chat_openai_api_key,
+        base_url=settings.chat_base_url
+    )
+    stream = await client.chat.completions.create(
+        model=settings.chat_model,
+        messages=[{"role": "user", "content": question}],
+        temperature=settings.chat_temperature,
+        stream=True,
+    )
+
+    async def content_generator():
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    return [], content_generator()

@@ -173,10 +173,7 @@ def get_embeddings(texts: List[str], cancel_check: Optional[Callable[[], bool]] 
                     )
                     return all_embeddings
                 except RuntimeError as e:
-                    logger.error(
-                        f"Skipping text {i + j} (len={len(text)}): {e}"
-                    )
-                    # Append a zero vector so indices stay aligned
-                    all_embeddings.append([0.0] * settings.embedding_dimension)
+                    logger.error(f"Text embedding failed: {e}")
+                    raise RuntimeError(f"Failed to embed text at index {i + j}: {e}") from e
 
     return all_embeddings
