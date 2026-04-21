@@ -1,23 +1,24 @@
 ---
-description: Constitution for PDF injector support
+description: Constitution for Markdown injector support
 alwaysApply: true
 ---
 
-# Retriva Constitution — PDF Injector
+# Retriva Constitution — Markdown Injector
 
 ## Product law
-- Retriva must support indexing local PDF documents as a first-class ingestion mode.
-- PDF-derived chunks must remain compatible with existing retrieval, grounding, and citation behavior.
-- OCR is not required for baseline PDF ingestion.
+- Retriva must support indexing local Markdown documents as a first-class ingestion mode.
+- Markdown-derived chunks must remain compatible with existing retrieval, grounding, and citation behavior.
+- Markdown structure should improve chunk boundaries, not be discarded blindly.
 
 ## Architecture law
-- Introduce PDF support as a dedicated injector implementation.
+- Introduce Markdown support as a dedicated injector implementation.
 - Reuse shared chunking, indexing, language metadata, and citation abstractions where possible.
-- Preserve modularity so OCR or advanced PDF enrichment can be added later without redesign.
+- Preserve modularity so advanced Markdown-aware enrichment can be added later without redesign.
 
 ## Scope law
 Out of scope for this increment:
-- mandatory OCR
-- table structure perfection beyond text extraction
+- full static-site rendering
+- executing embedded code blocks
+- image OCR/VLM as a requirement
 - UI redesign
 - replacing existing injectors

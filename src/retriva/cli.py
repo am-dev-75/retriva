@@ -358,6 +358,72 @@ def run_pdf_ingest(
 
 
 # ---------------------------------------------------------------------------
+# Markdown injector
+# ---------------------------------------------------------------------------
+
+def run_markdown_ingest(
+    target: Path,
+    api_url: str,
+    limit: int = 0,
+) -> None:
+    """
+    Discover and ingest Markdown files under *target*.
+
+    1. Walk *target* for ``*.md`` and ``*.markdown`` files.
+    2. Parse each file locally to extract sections/headings.
+    3. POST to ``/api/v1/ingest/markdown``.
+    """
+    from retriva.ingestion.markdown_parser import parse_markdown
+
+    # --- 1. Discover Markdown files ---
+    md_files: list[Path] = []
+    if target.is_file():
+        if target.suffix.lower() in (".md", ".markdown"):
+            md_files.append(target)
+        else:
+            logger.error(f"'{target}' is not a Markdown file.")
+            return
+    else:
+        md_files = sorted(
+            [p for p in target.rglob("*") if p.suffix.lower() in (".md", ".markdown")]
+        )
+
+    if not md_files:
+        logger.warning(f"No Markdown files found under '{target}'.")
+        return
+
+    logger.info(f"Found {len(md_files)} Markdown file(s).")
+
+    # --- 2. Parse and ingest ---
+    total = 0
+    for md_path in md_files:
+        if 0 < limit <= total:
+            logger.info(f"Reached limit ({limit}). Stopping.")
+            return
+
+        logger.info(f"Parsing {md_path}...")
+        doc = parse_markdown(md_path)
+        if doc is None:
+            logger.warning(f"Skipping unreadable Markdown: {md_path}")
+            continue
+
+        payload = {
+            "source_path": doc["source_path"],
+            "page_title": doc["title"],
+            "sections": doc["sections"],
+        }
+        try:
+            r = requests.post(f"{api_url}/api/v1/ingest/markdown", json=payload)
+            r.raise_for_status()
+            total += 1
+            logger.info(f"[markdown] Uploaded '{doc['title']}'")
+        except Exception as e:
+            logger.error(f"Error uploading '{doc['title']}': {e}")
+
+    logger.info(f"Markdown ingestion complete — {total} document(s) processed.")
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -393,7 +459,7 @@ def main():
     )
     ingest_parser.add_argument(
         "--injector", type=str, default=None,
-        choices=["mediawiki_export", "pdf"],
+        choices=["mediawiki_export", "pdf", "markdown"],
         help="Use a specialised injector instead of the default discovery pipeline.",
     )
     ingest_parser.add_argument(
@@ -425,7 +491,7 @@ def main():
     )
     reindex_parser.add_argument(
         "--injector", type=str, default=None,
-        choices=["mediawiki_export", "pdf"],
+        choices=["mediawiki_export", "pdf", "markdown"],
         help="Use a specialised injector instead of the default discovery pipeline.",
     )
     reindex_parser.add_argument(
@@ -464,6 +530,8 @@ def main():
             run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
         elif injector == "pdf":
             run_pdf_ingest(target, args.api_url, args.limit)
+        elif injector == "markdown":
+            run_markdown_ingest(target, args.api_url, args.limit)
         else:
             run_ingest(target, args.api_url, args.limit, exclude or None)
 
@@ -482,6 +550,8 @@ def main():
             run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
         elif injector == "pdf":
             run_pdf_ingest(target, args.api_url, args.limit)
+        elif injector == "markdown":
+            run_markdown_ingest(target, args.api_url, args.limit)
         else:
             run_ingest(target, args.api_url, args.limit, exclude or None)
 

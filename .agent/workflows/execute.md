@@ -1,3 +1,3 @@
-# /execute — PDF Injector
+# /execute — Markdown Injector
 
-Implement only the approved tasks for the PDF injector.
+Implement only the approved tasks for the Markdown injector.

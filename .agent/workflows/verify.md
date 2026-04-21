@@ -1,7 +1,7 @@
-# /verify — PDF Injector
+# /verify — Markdown Injector
 
 Verify that:
-- recursive discovery finds PDFs
-- embedded text is extracted where available
-- page-aware chunks and citations remain usable
+- recursive discovery finds Markdown files
+- Markdown structure is preserved where useful
+- section-aware chunks and citations remain usable
 - existing ingestion modes are not broken

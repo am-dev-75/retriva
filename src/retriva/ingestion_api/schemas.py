@@ -35,6 +35,15 @@ class PdfIngestRequest(BaseModel):
     page_number: int = Field(..., description="1-indexed page number.")
     total_pages: int = Field(0, description="Total pages in the PDF.")
 
+class MarkdownSection(BaseModel):
+    heading: str = Field("", description="The heading of the section.")
+    content: str = Field(..., description="The textual content of the section.")
+
+class MarkdownIngestRequest(BaseModel):
+    source_path: str = Field(..., description="Absolute path to the Markdown file.")
+    page_title: str = Field(..., description="Derived document title.")
+    sections: List[MarkdownSection] = Field(..., description="Parsed sections of the Markdown file.")
+
 class ChunkIngestRequest(BaseModel):
     chunks: List[Chunk] = Field(..., description="List of completely raw Chunk objects.")
 

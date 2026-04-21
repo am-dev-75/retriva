@@ -54,6 +54,10 @@ FILE_TYPE_REGISTRY: Dict[str, Dict] = {
         "extensions": {".txt"},
         "sniffer": None,
     },
+    "markdown": {
+        "extensions": {".md", ".markdown"},
+        "sniffer": None,
+    },
     # Future formats:
     # "pdf": {"extensions": {".pdf"}, "sniffer": None},
 }

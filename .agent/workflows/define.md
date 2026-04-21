@@ -1,8 +1,8 @@
-# /define — PDF Injector
+# /define — Markdown Injector
 
 Read:
 - `AGENTS.md`
-- `docs/pdf-injector-contract.md`
-- `specs/011-pdf-injector/`
+- `docs/markdown-injector-contract.md`
+- `specs/013-markdown-injector/`
 
 Then refine the feature package without expanding scope.

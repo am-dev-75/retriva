@@ -1,8 +1,8 @@
 # Retriva Roadmap (excerpt)
 
 ## Current increment
-- add a PDF injector alongside existing local mirror and export injectors
+- add a Markdown injector alongside existing local mirror, export, and PDF injectors
 
 ## Later increments
-- OCR augmentation for scanned PDFs
-- advanced table and layout enrichment
+- richer Markdown asset/link resolution
+- notebook and docs-site integration

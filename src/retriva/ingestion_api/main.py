@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from retriva.ingestion_api.routers import ingest, ingest_HTML, ingest_image, ingest_text, ingest_mediawiki, ingest_pdf, jobs
+from retriva.ingestion_api.routers import ingest, ingest_HTML, ingest_image, ingest_text, ingest_mediawiki, ingest_pdf, ingest_markdown, jobs
 from retriva.indexing.qdrant_store import init_collection, get_client
 from retriva.logger import get_logger
 
@@ -41,4 +41,5 @@ app.include_router(ingest_image.router)
 app.include_router(ingest_text.router)
 app.include_router(ingest_mediawiki.router)
 app.include_router(ingest_pdf.router)
+app.include_router(ingest_markdown.router)
 app.include_router(jobs.router)
