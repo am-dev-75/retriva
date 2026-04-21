@@ -24,7 +24,13 @@ def main():
     print(f"  Indexing batch size:  {s.indexing_batch_size}")
     print()
     print(f"Starting API server on {args.host}:{args.port}...")
-    uvicorn.run("retriva.ingestion_api.main:app", host=args.host, port=args.port, reload=False)
+    uvicorn.run(
+        "retriva.ingestion_api.main:app",
+        host=args.host,
+        port=args.port,
+        reload=False,
+        log_config=None,
+    )
 
 if __name__ == "__main__":
     main()
