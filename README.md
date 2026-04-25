@@ -4,6 +4,7 @@
 
 - [Retriva](#retriva)
   - [Introduction](#introduction)
+    - [License notes](#license-notes)
   - [Architecture](#architecture)
     - [Logical architecture](#logical-architecture)
     - [Software architecture](#software-architecture)
@@ -16,7 +17,11 @@
 
 Retriva is a conversational AI agent. It is built to provide users with accurate and relevant information by leveraging the power of Retrieval Augmented Generation (RAG). It is built to provide users with accurate and relevant information by leveraging the power of Retrieval Augmented Generation (RAG). It is designed for enterprise use cases where data privacy and security are of utmost importance.
 
-For more details, please refer to [Retriva Documentation](https://github.com/am-dev-75/retriva-docs).
+For more details abouth the birth of the project, please see also [Retriva Documentation](https://github.com/am-dev-75/retriva-docs).
+
+### License notes
+
+Why did I choose the Apache License 2.0? Because this license, combined with certain specific design choices, allows for the creation of Retriva extensions without being required to release them as source code. No one knows if or how the project will evolve. If anyone were ever to use it as a starting point for developing a real product, I believe that the ability to extend it permissively while still remaining connected to the main repository for core functionality is a significant advantage.
 
 ## Architecture
 
