@@ -45,7 +45,8 @@ def process_html_in_background(payload: HtmlIngestRequest, job_id: str):
             page_title=payload.page_title,
             content_text=content or "",
             language=language,
-            images=images
+            images=images,
+            user_metadata=payload.user_metadata,
         )
         chunks = chunker.create_chunks(doc)
         client = get_client()

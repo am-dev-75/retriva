@@ -34,6 +34,7 @@ def process_text_in_background(payload: TextIngestRequest, job_id: str):
             page_title=payload.page_title,
             content_text=payload.content_text,
             images=[],
+            user_metadata=payload.user_metadata,
         )
         chunks = CapabilityRegistry().get_instance("chunker").create_chunks(doc)
         client = get_client()

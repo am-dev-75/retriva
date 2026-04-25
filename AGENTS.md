@@ -1,21 +1,25 @@
-# Agent Instructions — Retriva Markdown Injector
+# Agent Instructions — User-Provided Metadata (v1)
 
 ## Mission
-Add a new **injector** for indexing local Markdown files into Retriva.
+Add **user-provided metadata support** to `ingestion_api_v1` in Retriva OSS.
 
-The injector must support recursive directory exploration from the CLI, similarly to the existing local ingestion flows.
+This feature allows ingestion clients (e.g. thin adapter, CLI) to attach arbitrary
+user-defined key/value metadata to documents at ingestion time.
+
+The ingestion API v1 must:
+- accept user-provided metadata as an optional field
+- persist it at document level
+- propagate it to all chunks
+- expose it for retrieval, filtering, citations, and deletion
 
 ## Order of authority
-1. `specs/013-markdown-injector/spec.md`
-2. `docs/markdown-injector-contract.md`
+1. `specs/014-user-metadata-ingestion-v1/spec.md`
+2. `specs/014-user-metadata-ingestion-v1/architecture.md`
 3. `.agent/rules/retriva-constitution.md`
-4. `specs/013-markdown-injector/architecture.md`
-5. `specs/013-markdown-injector/tasks.md`
+4. `specs/014-user-metadata-ingestion-v1/tasks.md`
 
 ## Non-negotiable rules
-- Do not modify the repository root `README.md`
-- Preserve existing injectors and ingestion modes
-- Implement Markdown support as a **new injector**, not a rewrite of another injector
-- Directory traversal must be recursive from a user-supplied root path
-- Preserve Markdown structure where useful for chunking and citations (headings, lists, code fences, links)
-- Keep CLI/API changes backward-compatible where possible
+- Do not break existing ingestion_api_v1 clients
+- Metadata is opaque to v1 (no routing or interpretation)
+- Metadata must be propagated to chunks
+- No Open WebUI changes are allowed

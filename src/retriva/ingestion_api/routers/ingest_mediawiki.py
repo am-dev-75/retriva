@@ -48,6 +48,7 @@ def process_mediawiki_in_background(payload: MediaWikiIngestRequest, job_id: str
             page_title=payload.page_title,
             content_text=payload.content_text,
             images=[],
+            user_metadata=payload.user_metadata,
         )
 
         registry = CapabilityRegistry()

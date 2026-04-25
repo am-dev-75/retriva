@@ -38,6 +38,7 @@ def process_markdown_in_background(payload: MarkdownIngestRequest, job_id: str):
                 page_title=payload.page_title,
                 content_text=section.content,
                 images=[],
+                user_metadata=payload.user_metadata,
             )
             
             section_chunks = chunker.create_chunks(section_doc)

@@ -53,6 +53,7 @@ def process_pdf_page_in_background(payload: PdfIngestRequest, job_id: str):
             page_title=payload.page_title,
             content_text=payload.content_text,
             images=[],
+            user_metadata=payload.user_metadata,
         )
 
         # Override section_path in chunks for page-level citations
@@ -78,7 +79,7 @@ def process_pdf_page_in_background(payload: PdfIngestRequest, job_id: str):
         logger.error(f"Job {job_id} failed: {e}")
 
 
-def process_pdf_upload_in_background(temp_path: str, source_path: str, page_title: str, job_id: str):
+def process_pdf_upload_in_background(temp_path: str, source_path: str, page_title: str, job_id: str, user_metadata=None):
     manager = JobManager()
     manager.start_job(job_id)
     cancel_check = lambda: manager.is_cancel_requested(job_id)
@@ -114,6 +115,7 @@ def process_pdf_upload_in_background(temp_path: str, source_path: str, page_titl
                 page_title=page_title or doc.title,
                 content_text=page.text,
                 images=[],
+                user_metadata=user_metadata,
             )
 
             page_chunks = chunker.create_chunks(parsed_doc)
@@ -180,9 +182,30 @@ async def ingest_pdf_upload(
     file: UploadFile = File(...),
     source_path: str = Form(...),
     page_title: str = Form(None),
+    user_metadata: str = Form(None),
 ):
     """Ingest a raw PDF file upload."""
     logger.debug(f"Received PDF file upload: '{file.filename}'")
+
+    # Deserialise JSON-encoded user_metadata from form field
+    parsed_metadata = None
+    if user_metadata:
+        import json as _json
+        try:
+            parsed_metadata = _json.loads(user_metadata)
+        except _json.JSONDecodeError:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=422,
+                detail=[{"field": "user_metadata", "msg": "Invalid JSON in user_metadata form field"}],
+            )
+        from retriva.ingestion_api.schemas import validate_user_metadata, UserMetadataValidationError
+        try:
+            validate_user_metadata(parsed_metadata)
+        except UserMetadataValidationError as e:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=422, detail=e.details)
+
     manager = JobManager()
     job = manager.create_job(source=source_path, job_type="pdf_upload")
     
@@ -198,7 +221,8 @@ async def ingest_pdf_upload(
         temp_path, 
         source_path, 
         page_title or file.filename, 
-        job.id
+        job.id,
+        user_metadata=parsed_metadata,
     )
     
     return IngestResponse(

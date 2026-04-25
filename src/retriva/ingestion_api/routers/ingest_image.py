@@ -59,7 +59,8 @@ def process_image_in_background(payload: ImageIngestRequest, job_id: str):
             chunk_index=0,
             chunk_type="image",
             language="en",
-            image_path=payload.file_path
+            image_path=payload.file_path,
+            user_metadata=payload.user_metadata,
         )
 
         chunk = Chunk(text=text, metadata=meta)

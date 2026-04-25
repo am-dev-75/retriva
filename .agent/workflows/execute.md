@@ -1,3 +1,1 @@
-# /execute — Markdown Injector
-
-Implement only the approved tasks for the Markdown injector.
+# /execute — User-Provided Metadata (v1)

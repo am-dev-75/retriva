@@ -7,6 +7,20 @@ All ingestion endpoints (except `/collection`) are asynchronous and return a `jo
 ## Base URL
 Default: `http://127.0.0.1:8000/api/v1/ingest`
 
+## User-Provided Metadata
+
+All document-level endpoints accept an optional `user_metadata` field — a flat dictionary of string key/value pairs. This metadata is stored on the document, propagated to every chunk, and made visible during retrieval and in citations.
+
+### Hard Limits
+
+| Constraint                    | Limit          |
+| ----------------------------- | -------------- |
+| Maximum number of keys        | 20             |
+| Maximum length per value      | 256 characters |
+| Maximum serialized total size | 4096 bytes     |
+
+If any limit is violated, the request is rejected with **422 Unprocessable Entity** and a structured error payload describing which limits were exceeded.
+
 ## Endpoints
 
 ### 1. Ingest HTML
@@ -20,7 +34,8 @@ Ingests raw HTML content. The system will extract the title and main text conten
   "source_path": "https://example.com/page",
   "page_title": "Example Page",
   "html_content": "<html>...</html>",
-  "origin_file_path": "/path/to/local/file.html"
+  "origin_file_path": "/path/to/local/file.html",
+  "user_metadata": {"author": "Alice", "version": "2.0"}
 }
 ```
 
@@ -43,7 +58,8 @@ Ingests structured Markdown content, split into sections. This ensures high-prec
       "heading": "Installation",
       "content": "Steps to install..."
     }
-  ]
+  ],
+  "user_metadata": {"category": "docs"}
 }
 ```
 
@@ -59,7 +75,8 @@ Ingests text from a single PDF page. This is typically called page-by-page by th
   "page_title": "Document Title",
   "content_text": "Text from page 1...",
   "page_number": 1,
-  "total_pages": 10
+  "total_pages": 10,
+  "user_metadata": {"department": "engineering"}
 }
 ```
 
@@ -76,7 +93,8 @@ Ingests a page extracted from a MediaWiki XML export.
   "content_text": "Plain text content...",
   "page_id": 123,
   "namespace": 0,
-  "linked_assets": ["/path/to/image.png"]
+  "linked_assets": ["/path/to/image.png"],
+  "user_metadata": {"wiki": "internal"}
 }
 ```
 
@@ -90,7 +108,8 @@ Ingests an image for VLM-based enrichment (visual description).
 {
   "source_path": "/path/to/image.png",
   "page_title": "image",
-  "file_path": "/path/to/image.png"
+  "file_path": "/path/to/image.png",
+  "user_metadata": {"project": "schematics"}
 }
 ```
 
@@ -104,7 +123,8 @@ Ingests raw plain text.
 {
   "source_path": "/path/to/note.txt",
   "page_title": "My Note",
-  "content_text": "Hello world..."
+  "content_text": "Hello world...",
+  "user_metadata": {"source": "manual-entry"}
 }
 ```
 
@@ -125,7 +145,8 @@ Ingests pre-processed `Chunk` objects directly.
         "page_title": "...",
         "section_path": "...",
         "chunk_id": "...",
-        "chunk_index": 0
+        "chunk_index": 0,
+        "user_metadata": {"custom": "value"}
       }
     }
   ]
@@ -164,3 +185,16 @@ Returns the status of a specific ingestion job.
 
 ### 400 Bad Request
 Occurs if the payload is malformed or required fields are missing.
+
+### 422 Unprocessable Entity (Metadata Validation)
+Occurs when `user_metadata` violates hard limits.
+```json
+{
+  "detail": [
+    {
+      "field": "user_metadata",
+      "msg": "Too many keys: 25 exceeds maximum of 20"
+    }
+  ]
+}
+```

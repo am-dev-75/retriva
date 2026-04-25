@@ -69,14 +69,14 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
             by_norm_title[norm_key] = {
                 "source": {"name": raw_title},
                 "document": [text],
-                "metadata": [{"source": path, "title": raw_title}]
+                "metadata": [{"source": path, "title": raw_title, "user_metadata": chunk.get("user_metadata")}]
             }
         else:
             # Add to existing title group
             by_norm_title[norm_key]["document"].append(text)
             # Only add unique source paths to metadata
             if not any(m["source"] == path for m in by_norm_title[norm_key]["metadata"]):
-                by_norm_title[norm_key]["metadata"].append({"source": path, "title": raw_title})
+                by_norm_title[norm_key]["metadata"].append({"source": path, "title": raw_title, "user_metadata": chunk.get("user_metadata")})
 
     results = [Citation(**v) for v in by_norm_title.values()]
     logger.info(f"Grouped {len(chunks)} chunks into {len(results)} unique citations.")
