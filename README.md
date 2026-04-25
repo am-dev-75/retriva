@@ -48,13 +48,14 @@ See [this page](docs/implementation.md) for the implementation details.
 
 * If not already available, [deploy a Qdrant instance](https://qdrant.tech/documentation/quickstart/).
   * This is the typical log when you start the containerized version:
+
 ```
-           _                 _    
+           _                 _  
   __ _  __| |_ __ __ _ _ __ | |_  
  / _` |/ _` | '__/ _` | '_ \| __| 
 | (_| | (_| | | | (_| | | | | |_  
  \__, |\__,_|_|  \__,_|_| |_|\__| 
-    |_|                           
+    |_|                     
 
 Version: 1.17.1, build: eabee371
 Access web UI at http://localhost:6333/dashboard
@@ -76,35 +77,46 @@ Access web UI at http://localhost:6333/dashboard
 ```
 
 * After cloning this repository
-  * install dependencies (use of a virtual environment is recommended):
-```(retriva-venv) $ pip install -r requirements.txt```
-  * Copy `.env` from `.env.example` and fill in the values so that Retriva can connect to the Qdrant instance and the LLM's runner(s) you intend to use.
 
+  * install dependencies (use of a virtual environment is recommended):
+    ```(retriva-venv) $ pip install -r requirements.txt```
+  * Copy `.env` from `.env.example` and fill in the values so that Retriva can connect to the Qdrant instance and the LLM's runner(s) you intend to use.
 * Start the ingestion API server:
+
 ```bash
 (retriva-venv) $ PYTHONPATH=src python -m retriva.ingestion_api
 ```
 
 * Build the knowledge base from *your* documents with the CLI. For instance:
+
 ```bash
 (retriva-venv) $ PYTHONPATH=src python -m retriva.cli reindex --path ~/my_documents
 ```
+
 For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
 
 * Start the chat application:
+
 ```bash
 (retriva-venv) $ streamlit run src/retriva/ui/streamlit_app.py
 ```
+
 ### Use in tandem with Open WebUI (optional)
+
 * Start the Retriva backend providing OpenAI API:
+
 ```bash
 (retriva-venv) $ PYTHONPATH=src python -m retriva.openai_api
 ```
+
 * Start an instance of [Open WebUI for Retriva](https://github.com/am-dev-75/open-webui_retriva).
-
+* In Open WebUI (OWUI)
+  * create admin user
+  * in Admin panel->Settings, enable the flag "Enable API Keys"
+  * in User'settings->Account create the API key.
+  * copy this API key in the [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter)'s `.env` file so that the adapter che authenticate with OWUI.
 * Start [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter).
-
-* Point your browser to the Open WebUI for Retriva instance and start having fun.
+* In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
 
 ## Licensing
 
