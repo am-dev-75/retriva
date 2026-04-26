@@ -4,13 +4,22 @@
 
 - [Retriva](#retriva)
   - [Introduction](#introduction)
+    - [Key Features](#key-features)
     - [License notes](#license-notes)
   - [Architecture](#architecture)
-    - [Logical architecture](#logical-architecture)
+    - [Overview](#overview)
+    - [Open WebUI (OWUI)](#open-webui-owui)
+    - [Thin Adapter](#thin-adapter)
+    - [Retriva Core](#retriva-core)
+    - [End-to-End Flow Summary](#end-to-end-flow-summary)
+      - [Upload-only flow](#upload-only-flow)
+      - [Question flow](#question-flow)
+    - [API](#api)
     - [Software architecture](#software-architecture)
   - [Implementation](#implementation)
   - [Quick Start](#quick-start)
     - [Use in tandem with Open WebUI (optional)](#use-in-tandem-with-open-webui-optional)
+  - [Advanced features](#advanced-features)
   - [Licensing](#licensing)
 
 ## Introduction
@@ -19,22 +28,125 @@ Retriva is a conversational AI agent. It is built to provide users with accurate
 
 For more details abouth the birth of the project, please see also [Retriva Documentation](https://github.com/am-dev-75/retriva-docs).
 
+### Key Features
+
+* OpenAI-compatible integration throughout
+* Asynchronous, resilient ingestion
+* Strict separation of control plane and data plane
+* Identity-preserving document handling
+  * Every document keeps the identity it was given at upload time, even if its content is identical to another document. In other words, Retriva does not collapse, merge, or deduplicate documents automatically based on file content.
+* Debug-only internal observability endpoints
+* Seamless integration with [Open WebUI](https://github.com/open-webui/open-webui)
+  * To enable this, use
+    * This container: [Open WebUI for Retriva](https://github.com/am-dev-75/open-webui_retriva)
+    * [This additional service](https://github.com/am-dev-75/open-webui_retriva-adapter), acting as a bridge between Retriva backend and Open WebUI frontend
+* When combined with [Open WebUI](https://github.com/am-dev-75/open-webui_retriva)
+  * Chat-based ingestion directives
+  * Deterministic intent classification
+    * Given the same request, the adapter will always make the same routing decision — regardless of timing, retries, or OWUI’s internal orchestration.
+
 ### License notes
 
 Why did I choose the Apache License 2.0? Because this license, combined with certain specific design choices, allows for the creation of Retriva extensions without being required to release them as source code. No one knows if or how the project will evolve. If anyone were ever to use it as a starting point for developing a real product, I believe that the ability to extend it permissively while still remaining connected to the main repository for core functionality is a significant advantage.
 
 ## Architecture
 
-Retriva is built around a RAG (Retrieval-Augmented Generation) paradigm, currently tailored for technical documentation about embedded systems and electronics boards. Current architecture is modular and decoupled, consisting of the following key components:
+### Overview
+Retriva is a retrieval‑augmented generation (RAG) platform designed to integrate seamlessly with Open WebUI (OWUI) while preserving a clean separation of concerns between user interaction, ingestion orchestration, and LLM execution.
+
+The final logical architecture should look like ![this:](docs/assets/Retriva_target_logic_architecture.drawio.png)
+
+At a high level, the architecture consists of four main components:
+
+- **Open WebUI (OWUI)** – the user-facing interface
+- **Thin Adapter** – the control plane and policy enforcement layer
+- **Retriva Core** – ingestion, retrieval, and document management
+- **LLM Providers** – external or internal model backends
+
+### Open WebUI (OWUI)
+
+Open WebUI is responsible for:
+
+- User authentication and chat sessions
+- File uploads
+- Knowledge Base (KB) management
+- UI-level orchestration (search planning, follow-up suggestions, streaming reconciliation)
+
+OWUI always communicates using OpenAI-compatible APIs, even for non-user actions such as uploads or internal planning. As a result, OWUI may emit multiple chat-completion requests for a single user action. These requests are control-plane artifacts, not direct expressions of user intent.
+OWUI remains intentionally unaware of Retriva internals.
+
+### Thin Adapter
+
+Thin Adapter (Control Plane)
+The Thin Adapter sits between OWUI and Retriva and is the architectural keystone of the system.
+Its responsibilities include:
+* Intent classification
+  * Distinguishes human-authored questions from OWUI-generated control prompts
+  * Ensures uploads and directives do not trigger unintended LLM calls
+* Directive handling
+  * Implements chat-based ingestion directives (e.g. `@@ingestion_tag_start`, `@@ingestion_tag_stop`)
+  * Maintains per-chat, ephemeral ingestion context
+* Ingestion orchestration
+  * Detects uploads indirectly via OWUI’s Files API (out-of-band)
+  * Performs asynchronous ingestion through polling
+  * Applies user-provided metadata at ingestion time
+* Policy enforcement
+  * Ensures upload-only turns never reach the LLM
+  * Guarantees deterministic behavior regardless of OWUI’s internal orchestration loops
+* Observability
+  * Maintains mapping stores:
+    * OWUI Knowledge Bases ↔ Retriva kb_ids
+    * OWUI file IDs ↔ Retriva doc_ids
+  * Exposes gated, internal debug endpoints (`/internal/...`) for inspection
+
+Crucially, the adapter:
+
+- Never calls the LLM directly
+- Never forwards user credentials
+- Never interprets OWUI control prompts as user intent
+
+It is a pure control plane, not a model gateway.
+
+### Retriva Core
+Retriva is the data plane and system of record for:
+* Document ingestion
+* Chunking and embedding
+* Metadata storage (including user-provided tags)
+* Knowledge Base assignment
+* Retrieval and ranking
+* LLM request construction
+
+Retriva:
+* Receives ingestion jobs from the adapter
+* Stores documents using its own identifiers (doc_id)
+* Applies metadata exactly as provided at ingestion time
+* Executes retrieval and calls the LLM only when explicitly requested by the adapter
+
+Retriva treats every upload as a distinct document, even if file content is identical. This preserves user intent, document lifecycle independence, and metadata correctness.
+
+### End-to-End Flow Summary
+#### Upload-only flow
+```
+User → OWUI (upload)
+OWUI → Adapter (chat + control prompts)
+Adapter → Synthetic acknowledgement
+Adapter → OWUI Files API (polling)
+Adapter → Retriva ingestion API
+```
+#### Question flow
+```
+User → OWUI (question)
+OWUI → Adapter
+Adapter → Retriva
+Retriva → LLM
+```
+At no point do uploads implicitly cause LLM calls.
+
+### API
 
 - **Ingestion API (`ingestion_api/`)**: A standalone HTTP service that handles the data processing pipeline. It locally discovers filesystem-based static HTML mirrors, extracts main content, and performs section-aware text chunking.
 - **Embeddings & Vector Store (`indexing/`)**: Extracted metadata and text chunks are converted into multilingual embeddings via an OpenAI-compatible endpoint. These embeddings are batched and stored in a Qdrant vector database for fast and scalable dense retrieval.
-- **QA Pipeline (`qa/`)**: Drives the retrieval and generation phases. It queries Qdrant for semantic similarity, retrieves contextual chunks, and generates grounded answers based strictly on the retrieved data.
-- **User Interface (`ui/`)**: A Streamlit-based frontend offering a conversational chat experience. It supports grounded answers, citations, and features an integrated debug panel to visualize the retrieval process.
 
-### Logical architecture
-
-The final architecture should look like ![this:](docs/assets/Retriva_target_logic_architecture.drawio.png)
 
 ### Software architecture
 
