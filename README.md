@@ -55,7 +55,7 @@ See [this page](docs/implementation.md) for the implementation details.
  / _` |/ _` | '__/ _` | '_ \| __| 
 | (_| | (_| | | | (_| | | | | |_  
  \__, |\__,_|_|  \__,_|_| |_|\__| 
-    |_|                     
+    |_|                   
 
 Version: 1.17.1, build: eabee371
 Access web UI at http://localhost:6333/dashboard
@@ -117,6 +117,10 @@ For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
   * copy this API key in the [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter)'s `.env` file so that the adapter che authenticate with OWUI.
 * Start [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter).
 * In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
+
+## Advanced features
+
+See [this page](docs/advanced_features.md).
 
 ## Licensing
 
