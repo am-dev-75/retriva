@@ -16,6 +16,7 @@
       - [Question flow](#question-flow)
     - [API](#api)
     - [Software architecture](#software-architecture)
+    - [Data Sovereignty](#data-sovereignty)
   - [Implementation](#implementation)
   - [Quick Start](#quick-start)
     - [Use in tandem with Open WebUI (optional)](#use-in-tandem-with-open-webui-optional)
@@ -147,10 +148,17 @@ At no point do uploads implicitly cause LLM calls.
 - **Ingestion API (`ingestion_api/`)**: A standalone HTTP service that handles the data processing pipeline. It locally discovers filesystem-based static HTML mirrors, extracts main content, and performs section-aware text chunking.
 - **Embeddings & Vector Store (`indexing/`)**: Extracted metadata and text chunks are converted into multilingual embeddings via an OpenAI-compatible endpoint. These embeddings are batched and stored in a Qdrant vector database for fast and scalable dense retrieval.
 
-
 ### Software architecture
 
 ![](docs/assets/Retriva_software_architecture.drawio.png)
+
+### Data Sovereignty
+
+From the very beginning, Retriva was designed with data sovereignty in mind—that is, ensuring that parties other than the owner of the data entered into the knowledge base could not access it. Currently, there are several solutions to address this requirement, each with its own pros and cons. This [section](docs/data_sovereignty.md) provides an overview of these options. Given Retriva’s modular nature, it can be deployed in various ways, including hybrid configurations that combine the options listed in the linked page.
+
+
+
+
 
 ## Implementation
 
