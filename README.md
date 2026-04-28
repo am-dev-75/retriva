@@ -20,6 +20,7 @@
   - [Implementation](#implementation)
   - [Quick Start](#quick-start)
     - [Use in tandem with Open WebUI (optional)](#use-in-tandem-with-open-webui-optional)
+  - [Basic features](#basic-features)
   - [Advanced features](#advanced-features)
   - [Licensing](#licensing)
 
@@ -237,6 +238,10 @@ For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
   * copy this API key in the [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter)'s `.env` file so that the adapter che authenticate with OWUI.
 * Start [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter).
 * In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
+
+## Basic features
+
+See [this page](docs/basic_features.md).
 
 ## Advanced features
 
