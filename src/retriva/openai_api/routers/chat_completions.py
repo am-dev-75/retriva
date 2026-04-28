@@ -71,7 +71,14 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
     by_norm_title = {}
     for chunk in chunks:
         # Group by normalized title (alphanumeric only)
-        raw_title = chunk.get("page_title") or Path(chunk.get("source_path", "unknown")).name or "Unknown Source"
+        # Try to get a human-friendly title first
+        raw_title = chunk.get("page_title")
+        if not raw_title:
+             path = chunk.get("source_path", "unknown")
+             raw_title = Path(path).stem.replace('_', ' ').replace('-', ' ').title()
+             if raw_title == "Unknown":
+                 raw_title = "Unknown Source"
+        
         # Aggressive normalization for grouping
         norm_key = re.sub(r'[^a-z0-9]', '', raw_title.lower())
         
@@ -281,32 +288,22 @@ async def _handle_streaming(
         )
 
     async def _sse_generator():
-        MAX_SSE_PAYLOAD = 16000 # 16KB limit per 'data:' line
+        MAX_SSE_PAYLOAD = 32000 # 32KB limit per 'data:' line
 
         async def _normalized_yield(data_json: str):
-            """Helper to yield SSE data in chunks not exceeding MAX_SSE_PAYLOAD."""
+            """
+            Helper to yield SSE data in lines not exceeding MAX_SSE_PAYLOAD.
+            """
             if len(data_json) <= MAX_SSE_PAYLOAD:
                 yield f"data: {data_json}\n\n".encode("utf-8")
                 return
 
-            # If larger than limit, we use multiline SSE 'data:' lines.
-            # IMPORTANT: The SSE spec says that multiple 'data:' lines in the same event
-            # are joined with a NEWLINE (\n). To keep JSON valid, we must ensure
-            # that we don't break the JSON in a way that the added newlines 
-            # make it invalid. Fortunately, most JSON parsers ignore newlines 
-            # between tokens. 
-            # However, newlines INSIDE strings are NOT allowed in JSON.
-            # So we escape any literal newlines in the original JSON first (though there shouldn't be any in minified JSON).
-            
-            # Since we yield f"data: {chunk}\n", the client will receive chunk1\nchunk2...
             # Split into chunks
             for i in range(0, len(data_json), MAX_SSE_PAYLOAD):
                 chunk = data_json[i : i + MAX_SSE_PAYLOAD]
                 if i + MAX_SSE_PAYLOAD < len(data_json):
-                    # Intermediate chunk
                     yield f"data: {chunk}\n".encode("utf-8")
                 else:
-                    # Final chunk for this event
                     yield f"data: {chunk}\n\n".encode("utf-8")
 
         # First event: role announcement
@@ -360,95 +357,84 @@ async def _handle_streaming(
         clean_text_so_far = ""
         citation_refs = []
 
-        # Content events: character by character processing
+        # Content events
         try:
             async for token in content_gen:
-                for char in token:
-                    if not inside_bracket:
-                        if char == '[':
-                            inside_bracket = True
-                            buffer += char
-                        else:
-                            out_chunk += char
-                            clean_text_so_far += char
-                    else:
-                        buffer += char
-                        if char == ']':
-                            inside_bracket = False
-                            content = buffer[1:-1].strip().lower()
-                            
-                            citation_idx = None
-                            if content in title_to_idx:
-                                citation_idx = title_to_idx[content]
+                clean_token = ""
+                out_token = ""
+                
+                # Check for [Title] in the token more efficiently
+                if '[' in token or ']' in token or inside_bracket:
+                    for char in token:
+                        if not inside_bracket:
+                            if char == '[':
+                                inside_bracket = True
+                                buffer += char
                             else:
-                                # Fuzzy match for truncated titles
-                                clean_content = content.replace('...', '')
-                                for t, i in title_to_idx.items():
-                                    if len(clean_content) > 10:
-                                        prefix = clean_content[:10]
-                                        suffix = clean_content[-10:]
-                                        if t.startswith(prefix) and t.endswith(suffix):
+                                out_token += char
+                                clean_text_so_far += char
+                        else:
+                            buffer += char
+                            if char == ']':
+                                inside_bracket = False
+                                content = buffer[1:-1].strip().lower()
+                                
+                                citation_idx = None
+                                if content in title_to_idx:
+                                    citation_idx = title_to_idx[content]
+                                else:
+                                    # Fuzzy match for truncated titles
+                                    clean_content = content.replace('...', '')
+                                    for t, i in title_to_idx.items():
+                                        if len(clean_content) > 10:
+                                            prefix = clean_content[:10]
+                                            suffix = clean_content[-10:]
+                                            if t.startswith(prefix) and t.endswith(suffix):
+                                                citation_idx = i
+                                                break
+                                        if len(content) > 5 and (t.startswith(content) or t.endswith(content)):
                                             citation_idx = i
                                             break
-                                    if len(content) > 5 and (t.startswith(content) or t.endswith(content)):
-                                        citation_idx = i
-                                        break
 
-                            if citation_idx is not None:
-                                end_index = len(clean_text_so_far)
-                                
-                                sentence_start = clean_text_so_far.rfind('.')
-                                if sentence_start != -1:
-                                    start_index = sentence_start + 1
-                                else:
+                                if citation_idx is not None:
+                                    end_index = len(clean_text_so_far)
+                                    sentence_start = clean_text_so_far.rfind('.')
+                                    start_index = sentence_start + 1 if sentence_start != -1 else 0
                                     nl_start = clean_text_so_far.rfind('\n')
-                                    if nl_start != -1:
+                                    if nl_start != -1 and nl_start > sentence_start:
                                         start_index = nl_start + 1
-                                    else:
-                                        start_index = 0
+                                            
+                                    while start_index < end_index and clean_text_so_far[start_index].isspace():
+                                        start_index += 1
                                         
-                                while start_index < end_index and clean_text_so_far[start_index].isspace():
-                                    start_index += 1
-                                    
-                                citation_refs.append(
-                                    CitationRef(
-                                        start_index=max(0, start_index),
-                                        end_index=end_index,
-                                        citation_index=citation_idx
+                                    citation_refs.append(
+                                        CitationRef(
+                                            start_index=max(0, start_index),
+                                            end_index=end_index,
+                                            citation_index=citation_idx
+                                        )
                                     )
-                                )
-                                
-                                out_chunk += f"[{citation_idx + 1}]"
-                            else:
-                                out_chunk += buffer
-                                clean_text_so_far += buffer
-                            buffer = ""
-                
-                if out_chunk:
+                                    out_token += f"[{citation_idx + 1}]"
+                                else:
+                                    out_token += buffer
+                                    clean_text_so_far += buffer
+                                buffer = ""
+                else:
+                    out_token = token
+                    clean_text_so_far += token
+
+                if out_token:
                     chunk = ChatCompletionChunk(
                         id=completion_id,
-                        choices=[
-                            StreamingChoice(
-                                index=0,
-                                delta=DeltaContent(content=out_chunk),
-                                finish_reason=None,
-                            )
-                        ],
+                        choices=[StreamingChoice(index=0, delta=DeltaContent(content=out_token), finish_reason=None)],
                     )
                     async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                         yield b
-                    out_chunk = ""
 
             if buffer:
                 chunk = ChatCompletionChunk(
                     id=completion_id,
-                    choices=[
-                        StreamingChoice(
-                            index=0,
-                            delta=DeltaContent(content=buffer),
-                            finish_reason=None,
-                        )
-                    ],
+                    choices=[StreamingChoice(index=0, delta=DeltaContent(content=buffer), finish_reason=None)],
                 )
                 async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                     yield b
@@ -475,9 +461,22 @@ async def _handle_streaming(
                 )
             )
 
-        # Final events: split citations into batches to ensure each event is < 16KB
-        # This is more robust than multiline data: because it avoids injecting newlines into JSON.
+        # Final events: split citations into batches and append numbered source list
         if all_sources:
+            # 1. Append the numbered sources text list to the answer
+            sources_text = "\n\nSources:\n"
+            for i, c in enumerate(all_sources):
+                name = c.source.get("name", "Unknown")
+                sources_text += f"[{i+1}] {name}\n"
+            
+            text_chunk = ChatCompletionChunk(
+                id=completion_id,
+                choices=[StreamingChoice(index=0, delta=DeltaContent(content=sources_text), finish_reason=None)],
+            )
+            async for b in _normalized_yield(text_chunk.model_dump_json(exclude_none=True)):
+                yield b
+            
+            # 2. Send citations in batches in the metadata
             current_batch = []
             current_batch_size = 0
             
@@ -494,7 +493,6 @@ async def _handle_streaming(
                         id=completion_id,
                         choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason=None)],
                         metadata=metadata_payload,
-                        sources=None 
                     )
                     async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                         yield b
@@ -516,7 +514,6 @@ async def _handle_streaming(
                     id=completion_id,
                     choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop")],
                     metadata=metadata_payload,
-                    sources=None 
                 )
                 async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
                     yield b
@@ -525,7 +522,6 @@ async def _handle_streaming(
             stop_chunk = ChatCompletionChunk(
                 id=completion_id,
                 choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop")],
-                sources=None 
             )
             async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
                 yield b
