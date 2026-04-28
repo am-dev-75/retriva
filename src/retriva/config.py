@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # OpenAI-compatible API (for Open WebUI)
     openai_api_port: int = 8001
 
+    # Citation metadata limits
+    citation_snippet_size: int = 2000
+    max_citations: int = 0
+    max_metadata_per_citation: int = 0
+
     # Legacy Injection API
     ingestion_api_port: int = 8000
     

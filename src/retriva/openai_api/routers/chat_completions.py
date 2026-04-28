@@ -14,6 +14,7 @@
 
 import json
 import uuid
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
@@ -88,9 +89,16 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
             by_norm_title[norm_key]["document"].append(text)
             # Only add unique source paths to metadata
             if not any(m["source"] == path for m in by_norm_title[norm_key]["metadata"]):
-                by_norm_title[norm_key]["metadata"].append({"source": path, "title": raw_title, "user_metadata": chunk.get("user_metadata")})
+                # Apply per-citation metadata limit
+                if settings.max_metadata_per_citation <= 0 or len(by_norm_title[norm_key]["metadata"]) < settings.max_metadata_per_citation:
+                    by_norm_title[norm_key]["metadata"].append({"source": path, "title": raw_title, "user_metadata": chunk.get("user_metadata")})
 
     results = [Citation(**v) for v in by_norm_title.values()]
+    
+    # Apply total citations limit
+    if settings.max_citations > 0:
+        results = results[:settings.max_citations]
+        
     logger.info(f"Grouped {len(chunks)} chunks into {len(results)} unique citations.")
     return results
 
@@ -273,6 +281,34 @@ async def _handle_streaming(
         )
 
     async def _sse_generator():
+        MAX_SSE_PAYLOAD = 16000 # 16KB limit per 'data:' line
+
+        async def _normalized_yield(data_json: str):
+            """Helper to yield SSE data in chunks not exceeding MAX_SSE_PAYLOAD."""
+            if len(data_json) <= MAX_SSE_PAYLOAD:
+                yield f"data: {data_json}\n\n".encode("utf-8")
+                return
+
+            # If larger than limit, we use multiline SSE 'data:' lines.
+            # IMPORTANT: The SSE spec says that multiple 'data:' lines in the same event
+            # are joined with a NEWLINE (\n). To keep JSON valid, we must ensure
+            # that we don't break the JSON in a way that the added newlines 
+            # make it invalid. Fortunately, most JSON parsers ignore newlines 
+            # between tokens. 
+            # However, newlines INSIDE strings are NOT allowed in JSON.
+            # So we escape any literal newlines in the original JSON first (though there shouldn't be any in minified JSON).
+            
+            # Since we yield f"data: {chunk}\n", the client will receive chunk1\nchunk2...
+            # Split into chunks
+            for i in range(0, len(data_json), MAX_SSE_PAYLOAD):
+                chunk = data_json[i : i + MAX_SSE_PAYLOAD]
+                if i + MAX_SSE_PAYLOAD < len(data_json):
+                    # Intermediate chunk
+                    yield f"data: {chunk}\n".encode("utf-8")
+                else:
+                    # Final chunk for this event
+                    yield f"data: {chunk}\n\n".encode("utf-8")
+
         # First event: role announcement
         first_chunk = ChatCompletionChunk(
             id=completion_id,
@@ -284,7 +320,8 @@ async def _handle_streaming(
                 )
             ],
         )
-        yield f"data: {first_chunk.model_dump_json(exclude_none=True)}\n\n"
+        async for b in _normalized_yield(first_chunk.model_dump_json(exclude_none=True)):
+            yield b
 
         citations = await run_in_threadpool(_build_citations, chunks) if chunks else []
         
@@ -398,7 +435,8 @@ async def _handle_streaming(
                             )
                         ],
                     )
-                    yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+                    async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
+                        yield b
                     out_chunk = ""
 
             if buffer:
@@ -412,59 +450,100 @@ async def _handle_streaming(
                         )
                     ],
                 )
-                yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
+                async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
+                    yield b
                 clean_text_so_far += buffer
                 
         except Exception as e:
             logger.error(f"Streaming error mid-flight: {e}")
             # Close the stream gracefully — client will see truncated output
 
-        # Prepare truncated sources for metadata to stay well under the 16KB limit
-        truncated_sources = []
+        # Prepare sources for metadata
+        all_sources = []
         for c in citations:
-            # Join the first 5 fragments into a single document string
-            joined_doc = "\n\n---\n\n".join(c.document[:5])
-            if len(joined_doc) > 2000:
-                joined_doc = joined_doc[:2000] + "..."
+            # Join fragments and truncate based on setting
+            limit = settings.citation_snippet_size
+            joined_doc = "\n\n---\n\n".join(c.document)
+            if limit > 0 and len(joined_doc) > limit:
+                joined_doc = joined_doc[:limit] + "..."
                 
-            truncated_sources.append(
+            all_sources.append(
                 Citation(
                     source=c.source,
-                    document=[joined_doc], # Still a list, but with ONE joined item
-                    metadata=c.metadata[:5]
+                    document=[joined_doc],
+                    metadata=c.metadata
                 )
             )
 
-        # Final event: stop signal with metadata (no top-level sources)
-        metadata_payload = MessageMetadata(
-            sources=truncated_sources,
-            citation_refs=citation_refs,
-            output_text=clean_text_so_far
-        ) if citations else None
-        
-        stop_chunk = ChatCompletionChunk(
-            id=completion_id,
-            choices=[
-                StreamingChoice(
-                    index=0,
-                    delta=DeltaContent(),
-                    finish_reason="stop",
+        # Final events: split citations into batches to ensure each event is < 16KB
+        # This is more robust than multiline data: because it avoids injecting newlines into JSON.
+        if all_sources:
+            current_batch = []
+            current_batch_size = 0
+            
+            for i, c in enumerate(all_sources):
+                c_json = c.model_dump_json(exclude_none=True)
+                # If adding this citation exceeds 12KB (safe margin), send current batch
+                if current_batch and (current_batch_size + len(c_json) > 12000):
+                    metadata_payload = MessageMetadata(
+                        sources=current_batch,
+                        citation_refs=citation_refs if i == len(all_sources) - 1 else [],
+                        output_text=clean_text_so_far if i == len(all_sources) - 1 else ""
+                    )
+                    chunk = ChatCompletionChunk(
+                        id=completion_id,
+                        choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason=None)],
+                        metadata=metadata_payload,
+                        sources=None 
+                    )
+                    async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
+                        yield b
+                    
+                    current_batch = [c]
+                    current_batch_size = len(c_json)
+                else:
+                    current_batch.append(c)
+                    current_batch_size += len(c_json)
+            
+            # Final batch with 'stop' reason
+            if current_batch:
+                metadata_payload = MessageMetadata(
+                    sources=current_batch,
+                    citation_refs=citation_refs,
+                    output_text=clean_text_so_far
                 )
-            ],
-            metadata=metadata_payload,
-            sources=truncated_sources
-        )
+                stop_chunk = ChatCompletionChunk(
+                    id=completion_id,
+                    choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop")],
+                    metadata=metadata_payload,
+                    sources=None 
+                )
+                async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
+                    yield b
+        else:
+            # No citations, just send stop
+            stop_chunk = ChatCompletionChunk(
+                id=completion_id,
+                choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop")],
+                sources=None 
+            )
+            async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
+                yield b
         
-        final_json = stop_chunk.model_dump_json(exclude_none=True)
-        logger.debug(f"FINAL CHUNK JSON: {final_json[:500]}...")
-        yield f"data: {final_json}\n\n"
-        yield "data: [DONE]\n\n"
+        # Ensure the final event is flushed
+        await asyncio.sleep(0.01)
+        yield b"data: [DONE]\n\n"
 
 
 
     return StreamingResponse(
         _sse_generator(),
         media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
