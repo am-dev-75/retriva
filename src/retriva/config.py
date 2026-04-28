@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     # User Interface
     ui_port: int = 3000
     
+    # Internal Request Profiler
+    enable_internal_profiler: bool = False
+    
     model_config = SettingsConfigDict(
         env_file=str((Path(__file__).resolve().parents[2] / ".env").resolve()), 
         env_file_encoding="utf-8", 
