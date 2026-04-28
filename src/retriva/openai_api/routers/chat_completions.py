@@ -15,6 +15,7 @@
 import json
 import uuid
 import asyncio
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
@@ -64,8 +65,6 @@ def _extract_user_question(request: ChatCompletionRequest) -> str:
     )
 
 
-import re
-
 def _build_citations(chunks: list[dict]) -> list[Citation]:
     """Extract citation metadata from retrieved chunk payloads in Open WebUI format."""
     by_norm_title = {}
@@ -79,10 +78,10 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
              if raw_title == "Unknown":
                  raw_title = "Unknown Source"
         
-        # Aggressive normalization for grouping
-        norm_key = re.sub(r'[^a-z0-9]', '', raw_title.lower())
-        
+        # Use path + title as the unique key to avoid aggressive normalization
         path = chunk.get("source_path", "unknown")
+        norm_key = f"{path}:{raw_title}"
+        
         text = chunk.get("text", "")
         
         if norm_key not in by_norm_title:
@@ -94,7 +93,7 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
         else:
             # Add to existing title group
             by_norm_title[norm_key]["document"].append(text)
-            # Only add unique source paths to metadata
+            # Only add unique metadata entries
             if not any(m["source"] == path for m in by_norm_title[norm_key]["metadata"]):
                 # Apply per-citation metadata limit
                 if settings.max_metadata_per_citation <= 0 or len(by_norm_title[norm_key]["metadata"]) < settings.max_metadata_per_citation:
@@ -288,23 +287,13 @@ async def _handle_streaming(
         )
 
     async def _sse_generator():
-        MAX_SSE_PAYLOAD = 32000 # 32KB limit per 'data:' line
-
         async def _normalized_yield(data_json: str):
             """
-            Helper to yield SSE data in lines not exceeding MAX_SSE_PAYLOAD.
+            Yields a single SSE data event.
+            We no longer split lines with \n to avoid breaking JSON strings.
+            Size is managed by the citation batching logic below.
             """
-            if len(data_json) <= MAX_SSE_PAYLOAD:
-                yield f"data: {data_json}\n\n".encode("utf-8")
-                return
-
-            # Split into chunks
-            for i in range(0, len(data_json), MAX_SSE_PAYLOAD):
-                chunk = data_json[i : i + MAX_SSE_PAYLOAD]
-                if i + MAX_SSE_PAYLOAD < len(data_json):
-                    yield f"data: {chunk}\n".encode("utf-8")
-                else:
-                    yield f"data: {chunk}\n\n".encode("utf-8")
+            yield f"data: {data_json}\n\n".encode("utf-8")
 
         # First event: role announcement
         first_chunk = ChatCompletionChunk(
@@ -482,8 +471,8 @@ async def _handle_streaming(
             
             for i, c in enumerate(all_sources):
                 c_json = c.model_dump_json(exclude_none=True)
-                # If adding this citation exceeds 12KB (safe margin), send current batch
-                if current_batch and (current_batch_size + len(c_json) > 12000):
+                # Keep individual events small (approx 10KB) to stay safe for all proxies
+                if current_batch and (current_batch_size + len(c_json) > 10000):
                     metadata_payload = MessageMetadata(
                         sources=current_batch,
                         citation_refs=citation_refs if i == len(all_sources) - 1 else [],
@@ -496,6 +485,9 @@ async def _handle_streaming(
                     )
                     async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                         yield b
+                    
+                    # Small sleep to allow the event loop to flush the socket and avoid buffering issues
+                    await asyncio.sleep(0.02)
                     
                     current_batch = [c]
                     current_batch_size = len(c_json)
