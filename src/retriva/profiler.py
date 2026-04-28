@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import time
 import uuid
 import contextvars
@@ -62,7 +63,7 @@ class Profiler:
             "total_duration_ms": round((time.perf_counter() - self.start_time) * 1000, 2)
         }
         _profiler_logs.appendleft(log_entry)
-        logger.info(f"PROFILER_LOG: {log_entry}")
+        logger.info(f"PROFILER_LOG: {json.dumps(log_entry, indent=2)}")
 
     @classmethod
     def start_request(cls) -> "Profiler":
