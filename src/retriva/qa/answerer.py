@@ -20,9 +20,10 @@ from retriva.logger import get_logger
 from retriva.profiler import Profiler
 
 # Import modules to trigger default registrations
-import retriva.qa.retriever  # noqa: F401 — registers DefaultRetriever
-import retriva.qa.prompting  # noqa: F401 — registers DefaultPromptBuilder
-import retriva.qa.reranker   # noqa: F401 — registers DefaultReranker
+import retriva.qa.retriever        # noqa: F401 — registers DefaultRetriever
+import retriva.qa.prompting        # noqa: F401 — registers DefaultPromptBuilder
+import retriva.qa.reranker         # noqa: F401 — registers DefaultReranker
+import retriva.qa.hybrid_selector  # noqa: F401 — registers DefaultHybridSelector
 
 logger = get_logger(__name__)
 
@@ -88,25 +89,73 @@ def _rerank_if_enabled(query: str, chunks: list[dict]) -> list[dict]:
     return reranker.rerank(query, chunks, settings.retrieval_rerank_top_n)
 
 
-def ask_question(question: str, retriever_top_k: int = 5) -> dict:
-    logger.info(f"Processing question: {question}")
+def _hybrid_select_if_enabled(
+    reranked: list[dict],
+    vector_top: list[dict],
+) -> list[dict]:
+    """
+    Apply hybrid retrieval selection if both reranking and hybrid selection
+    are enabled.  Merges top-M reranked results with top-L vector-search
+    results to recover implicit evidence.
+
+    If either feature is disabled, return *reranked* unchanged.
+    """
+    if not settings.enable_retrieval_reranking:
+        return reranked
+    if not settings.enable_hybrid_retrieval_selection:
+        logger.debug("Hybrid selection disabled, using reranked set only.")
+        return reranked
+
+    registry = CapabilityRegistry()
+    selector = registry.get_instance("hybrid_selector")
+    return selector.select(
+        reranked,
+        vector_top,
+        keep_m=settings.hybrid_rerank_keep_top_m,
+        keep_l=settings.hybrid_vector_keep_top_l,
+    )
+
+
+def _retrieve_and_select(query: str, retriever_top_k: int, profiler) -> list[dict]:
+    """
+    Run the full retrieval pipeline: vector search → rerank → hybrid select.
+
+    Returns the final chunk list ready for context budgeting.
+    """
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    sanitized_question = question.replace('"', '').replace("'", "").strip()
-    chunks = retriever.retrieve(sanitized_question, top_k=retriever_top_k)
-    
-    profiler = Profiler.get_current()
+    chunks = retriever.retrieve(query, top_k=retriever_top_k)
+
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")
 
-    chunks = _rerank_if_enabled(sanitized_question, chunks)
+    # Preserve original vector order for hybrid selection
+    vector_top = chunks[:]
+
+    chunks = _rerank_if_enabled(query, chunks)
 
     if profiler:
         profiler.mark_phase("retrieval_reranking_complete")
 
+    chunks = _hybrid_select_if_enabled(chunks, vector_top)
+
+    if profiler:
+        profiler.mark_phase("retrieval_hybrid_selection_complete")
+
+    return chunks
+
+
+def ask_question(question: str, retriever_top_k: int = 5) -> dict:
+    logger.info(f"Processing question: {question}")
+    sanitized_question = question.replace('"', '').replace("'", "").strip()
+
+    profiler = Profiler.get_current()
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler)
+
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
     logger.info(f"Final context: {len(chunks)} chunks from up to {settings.max_citations} sources.")
 
+    registry = CapabilityRegistry()
     prompt_builder = registry.get_instance("prompt_builder")
     system_prompt = prompt_builder.build_prompt(question, chunks)
     
@@ -125,22 +174,14 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
 
 def ask_question_streaming(question: str, retriever_top_k: int = 5):
     logger.info(f"Processing question (streaming): {question}")
-    registry = CapabilityRegistry()
-    retriever = registry.get_instance("retriever")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
-    chunks = retriever.retrieve(sanitized_question, top_k=retriever_top_k)
-    
+
     profiler = Profiler.get_current()
-    if profiler:
-        profiler.mark_phase("retrieval_vector_search_complete")
-
-    chunks = _rerank_if_enabled(sanitized_question, chunks)
-
-    if profiler:
-        profiler.mark_phase("retrieval_reranking_complete")
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
+    registry = CapabilityRegistry()
     prompt_builder = registry.get_instance("prompt_builder")
     system_prompt = prompt_builder.build_prompt(question, chunks)
 
@@ -187,21 +228,31 @@ def ask_question_streaming_without_retrieval(question: str):
 
 async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
     logger.info(f"Processing question (async streaming): {question}")
-    registry = CapabilityRegistry()
-    retriever = registry.get_instance("retriever")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
     
     from starlette.concurrency import run_in_threadpool
-    chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k)
-    
+
     profiler = Profiler.get_current()
+
+    registry = CapabilityRegistry()
+    retriever = registry.get_instance("retriever")
+    chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k)
+
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")
+
+    # Preserve original vector order for hybrid selection
+    vector_top = chunks[:]
 
     chunks = await run_in_threadpool(_rerank_if_enabled, sanitized_question, chunks)
 
     if profiler:
         profiler.mark_phase("retrieval_reranking_complete")
+
+    chunks = _hybrid_select_if_enabled(chunks, vector_top)
+
+    if profiler:
+        profiler.mark_phase("retrieval_hybrid_selection_complete")
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 

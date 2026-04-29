@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+# Copyright (C) 2026 Andrea Marson (am.dev.75@gmail.com)
+
+"""
+Smoke Test: Validates Retriva features against Golden Answers.
+Uses the configured LLM as a judge to verify factual consistency.
+"""
+
+import os
+import sys
+import re
+from pathlib import Path
+from typing import List, Tuple
+
+# Setup path to include retriva src
+sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
+
+from retriva.qa.answerer import ask_question
+from retriva.config import settings
+from openai import OpenAI
+from retriva.logger import get_logger
+
+logger = get_logger("smoke_test")
+
+# Colors for CLI
+GREEN = "\033[92m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+GOLDEN_ANSWERS_PATH = Path(__file__).resolve().parent.parent / "docs/tests/golden-answers.md"
+
+def parse_golden_answers() -> List[Tuple[str, str]]:
+    """
+    Parses the markdown file to extract Question/Answer pairs.
+    Pattern:
+    [Number]. [Question]
+    
+    [Answer content...]
+    
+    Sources:
+    """
+    if not GOLDEN_ANSWERS_PATH.exists():
+        print(f"{RED}Error: Golden answers file not found at {GOLDEN_ANSWERS_PATH}{RESET}")
+        return []
+
+    content = GOLDEN_ANSWERS_PATH.read_text()
+    
+    # Simple regex to find numbered questions
+    # Matches "1. Question text" and captures until "Sources:" or next question
+    # This is a bit greedy but works for the current format
+    q_pattern = re.compile(r"(\d+)\.\s+(.*?)\n\n(.*?)(?=\n\nSources:|\n\n\d+\.)", re.DOTALL)
+    
+    matches = q_pattern.findall(content)
+    qa_pairs = []
+    for m in matches:
+        number, question, answer = m
+        qa_pairs.append((question.strip(), answer.strip()))
+        
+    return qa_pairs
+
+def judge_answer(question: str, golden: str, generated: str) -> Tuple[bool, str]:
+    """
+    Uses the configured LLM to judge if the generated answer is factually
+    consistent with the golden answer.
+    """
+    client = OpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
+    
+    prompt = f"""You are an objective QA evaluator.
+Compare the GENERATED ANSWER against the GOLDEN REFERENCE for the given question.
+
+QUESTION: {question}
+
+GOLDEN REFERENCE:
+{golden}
+
+GENERATED ANSWER:
+{generated}
+
+Is the GENERATED ANSWER factually consistent with the GOLDEN REFERENCE? 
+Consider:
+1. Does it contain the same key facts and values (e.g. power consumption numbers)?
+2. Does it maintain the same caveats if the information is missing?
+3. It does NOT have to be verbatim, just factually equivalent.
+
+Respond ONLY with "YES" or "NO" followed by a short one-sentence explanation.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0
+        )
+        result = response.choices[0].message.content.strip()
+        is_pass = result.upper().startswith("YES")
+        return is_pass, result
+    except Exception as e:
+        return False, f"Judge error: {str(e)}"
+
+def run_smoke_test():
+    print(f"\n{BOLD}Retriva Smoke Test — Golden Answer Validation{RESET}")
+    print(f"Loading reference: {GOLDEN_ANSWERS_PATH}\n")
+
+    qa_pairs = parse_golden_answers()
+    if not qa_pairs:
+        print(f"{RED}No QA pairs found in reference file.{RESET}")
+        return
+
+    passed = 0
+    total = len(qa_pairs)
+
+    for i, (question, golden) in enumerate(qa_pairs, 1):
+        print(f"{BOLD}[{i}/{total}] Testing:{RESET} {question}")
+        
+        # 1. Run Pipeline
+        try:
+            result = ask_question(question, retriever_top_k=settings.retriever_top_k)
+            generated = result["answer"]
+        except Exception as e:
+            print(f"  {RED}FAILED (Pipeline Error):{RESET} {str(e)}\n")
+            continue
+
+        # 2. Judge
+        print(f"  {BOLD}Judging...{RESET}")
+        is_pass, explanation = judge_answer(question, golden, generated)
+
+        if is_pass:
+            print(f"  {GREEN}PASSED:{RESET} {explanation}\n")
+            passed += 1
+        else:
+            print(f"  {RED}FAILED:{RESET} {explanation}")
+            print(f"\n  {BOLD}--- EXPECTED (GOLDEN) ---{RESET}")
+            print(golden)
+            print(f"\n  {BOLD}--- ACTUAL (GENERATED) ---{RESET}")
+            print(generated)
+            print(f"\n  {BOLD}--------------------------{RESET}\n")
+
+    # Final Summary
+    color = GREEN if passed == total else RED
+    print(f"{BOLD}Summary:{RESET} {color}{passed}/{total} Passed{RESET}")
+    
+    if passed == total:
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+if __name__ == "__main__":
+    run_smoke_test()

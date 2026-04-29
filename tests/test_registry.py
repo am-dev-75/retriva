@@ -18,6 +18,7 @@ def reset_registry():
     import retriva.qa.retriever
     import retriva.qa.prompting
     import retriva.qa.reranker
+    import retriva.qa.hybrid_selector
     import retriva.ingestion.chunker
     import retriva.ingestion.html_parser
     import retriva.ingestion.vlm_describer
@@ -25,6 +26,7 @@ def reset_registry():
     importlib.reload(retriva.qa.retriever)
     importlib.reload(retriva.qa.prompting)
     importlib.reload(retriva.qa.reranker)
+    importlib.reload(retriva.qa.hybrid_selector)
     importlib.reload(retriva.ingestion.chunker)
     importlib.reload(retriva.ingestion.html_parser)
     importlib.reload(retriva.ingestion.vlm_describer)

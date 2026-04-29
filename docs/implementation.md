@@ -1,12 +1,39 @@
 # Notes about the implementation
 
 - [Notes about the implementation](#notes-about-the-implementation)
+  - [Retrieval](#retrieval)
   - [Exposed APIs](#exposed-apis)
     - [Ingestion API](#ingestion-api)
     - [OpenAI API](#openai-api)
   - [Open WebUI Interfacing](#open-webui-interfacing)
     - [Streaming support](#streaming-support)
     - [Job cancellation support](#job-cancellation-support)
+
+## Retrieval
+
+The hybrid retrieval feature merges the top ranked vector search results with the top re-ranked results, allowing you to get the best of both worlds: implicit evidence from vector search (when you ask about something you haven't explicitly named) and the accuracy of re-ranking for explicit queries.
+
+The flow looks like this:
+
+vector search → re-ranking → hybrid selection → prompt build
+
+where hybrid selection implies
+
+top M reranked → append up to L vector chunks (deduped).
+
+A two-knob model approach is used, giving precise control:
+
+
+| Knob                       | Controls                                     | Example |
+| -------------------------- | -------------------------------------------- | ------- |
+| `HYBRID_RERANK_KEEP_TOP_M` | How many reranked chunks to keep (precision) | 6       |
+| `HYBRID_VECTOR_KEEP_TOP_L` | How many vector chunks to add (recall)       | 10      |
+
+This example means you can rerank a broader set (`RETRIEVAL_RERANK_TOP_N = 30`) but only keep the top 6 in the hybrid context, supplemented by 10 vector recall chunks. The `M` knob decouples reranker breadth from the final context composition.
+
+Qdrant (200) → Candidates (20) → Rerank (top 6) → Hybrid (M=6 + L=10) → Budget (25) → LLM
+                                       6 chunks   →   up to 16 chunks   →  ≤ 25 sources
+
 
 ## Exposed APIs
 
@@ -15,9 +42,10 @@ Retriva exposes two APIs: an ingestion API and an OpenAI-compatible API.
 ### Ingestion API
 
 The ingestion API is a proprietary REST API that is used to ingest documents into Retriva. It is located at `/api/v1/ingest` and is mainly used by
+
 * Retriva CLI
 * Open WebUI adapter.
-By default it runs on port 8000.
+  By default it runs on port 8000.
 
 ### OpenAI API
 

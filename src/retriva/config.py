@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     retrieval_rerank_batch_size: int = 100
     retrieval_rerank_max_length: int = 4096
 
+    # Hybrid retrieval selection
+    enable_hybrid_retrieval_selection: bool = True
+    hybrid_rerank_keep_top_m: int = 4
+    hybrid_vector_keep_top_l: int = 2
+
     # Indexing
     indexing_batch_size: int = 100
 
