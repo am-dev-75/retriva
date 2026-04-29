@@ -22,6 +22,7 @@ from retriva.profiler import Profiler
 # Import modules to trigger default registrations
 import retriva.qa.retriever  # noqa: F401 — registers DefaultRetriever
 import retriva.qa.prompting  # noqa: F401 — registers DefaultPromptBuilder
+import retriva.qa.reranker   # noqa: F401 — registers DefaultReranker
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,34 @@ def _limit_chunks_by_citations(chunks: list[dict], max_citations: int) -> list[d
         
     return limited_chunks
 
+
+def _rerank_if_enabled(query: str, chunks: list[dict]) -> list[dict]:
+    """
+    Apply two-stage re-ranking if enabled in settings.
+
+    1. Slice candidates to ``retrieval_rerank_candidates``.
+    2. Call the registered reranker with ``retrieval_rerank_top_n``.
+
+    If disabled, return chunks unchanged.
+    """
+    if not settings.enable_retrieval_reranking:
+        logger.debug("Re-ranking disabled, using vector-search order.")
+        return chunks
+
+    # Candidate selection: limit what enters the reranker
+    candidates = settings.retrieval_rerank_candidates
+    if 0 < candidates < len(chunks):
+        logger.debug(
+            f"Candidate selection: {len(chunks)} → {candidates} "
+            f"(RETRIEVAL_RERANK_CANDIDATES={candidates})"
+        )
+        chunks = chunks[:candidates]
+
+    registry = CapabilityRegistry()
+    reranker = registry.get_instance("reranker")
+    return reranker.rerank(query, chunks, settings.retrieval_rerank_top_n)
+
+
 def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     logger.info(f"Processing question: {question}")
     registry = CapabilityRegistry()
@@ -69,7 +98,11 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     profiler = Profiler.get_current()
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")
-        profiler.mark_phase("retrieval_ranking_complete")
+
+    chunks = _rerank_if_enabled(sanitized_question, chunks)
+
+    if profiler:
+        profiler.mark_phase("retrieval_reranking_complete")
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
     logger.info(f"Final context: {len(chunks)} chunks from up to {settings.max_citations} sources.")
@@ -100,7 +133,11 @@ def ask_question_streaming(question: str, retriever_top_k: int = 5):
     profiler = Profiler.get_current()
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")
-        profiler.mark_phase("retrieval_ranking_complete")
+
+    chunks = _rerank_if_enabled(sanitized_question, chunks)
+
+    if profiler:
+        profiler.mark_phase("retrieval_reranking_complete")
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
@@ -160,7 +197,11 @@ async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
     profiler = Profiler.get_current()
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")
-        profiler.mark_phase("retrieval_ranking_complete")
+
+    chunks = await run_in_threadpool(_rerank_if_enabled, sanitized_question, chunks)
+
+    if profiler:
+        profiler.mark_phase("retrieval_reranking_complete")
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 

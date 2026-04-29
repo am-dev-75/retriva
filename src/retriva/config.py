@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     # Retrieval
     retriever_top_k: int = 20
     
+    # Retrieval re-ranking (two-stage)
+    enable_retrieval_reranking: bool = True
+    retrieval_rerank_model: str = "cohere/rerank-v3.5"
+    retrieval_rerank_base_url: str = "https://openrouter.ai/api/v1"
+    retrieval_rerank_api_key: Optional[str] = None
+    retrieval_rerank_candidates: int = 100
+    retrieval_rerank_top_n: int = 30
+    retrieval_rerank_batch_size: int = 100
+    retrieval_rerank_max_length: int = 4096
+
     # Indexing
     indexing_batch_size: int = 100
 
@@ -95,5 +105,7 @@ class Settings(BaseSettings):
                 self.chat_openai_api_key = self.openrouter_openai_api_key
             if not self.visual_openai_api_key:
                 self.visual_openai_api_key = self.openrouter_openai_api_key
+            if not self.retrieval_rerank_api_key:
+                self.retrieval_rerank_api_key = self.openrouter_openai_api_key
 
 settings = Settings()

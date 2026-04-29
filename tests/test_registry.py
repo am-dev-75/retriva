@@ -17,12 +17,14 @@ def reset_registry():
     import importlib
     import retriva.qa.retriever
     import retriva.qa.prompting
+    import retriva.qa.reranker
     import retriva.ingestion.chunker
     import retriva.ingestion.html_parser
     import retriva.ingestion.vlm_describer
     import retriva.ingestion.pdf_parser
     importlib.reload(retriva.qa.retriever)
     importlib.reload(retriva.qa.prompting)
+    importlib.reload(retriva.qa.reranker)
     importlib.reload(retriva.ingestion.chunker)
     importlib.reload(retriva.ingestion.html_parser)
     importlib.reload(retriva.ingestion.vlm_describer)
