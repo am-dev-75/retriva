@@ -1,4 +1,14 @@
-# Benchmark QAs
+# Golden answers for testing purposes
+
+These are golden answers for testing purposes. They are not meant to be used as is, but rather as a reference for what a good answer should look like. They are used in combination with smoke-test script to validate the behavior of the retriever.
+
+Of course, the golden answers are meaningless if used with unrelated KBs. You must make sure that the KB provided to the retriever is the same KB that was used to validate the golden answers.
+
+```bash
+export VIRTUAL_ENV="..."
+export PYTHONPATH=".../retriva/src"
+python3 scripts/smoke_test.py
+```
 
 # KB: https://wiki.dave.eu/
 
