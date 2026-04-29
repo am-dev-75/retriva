@@ -45,6 +45,7 @@ from retriva.qa.answerer import (
 )
 from retriva.config import settings
 from retriva.logger import get_logger
+from retriva.profiler import Profiler
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["chat"])
@@ -204,6 +205,9 @@ async def _handle_non_streaming(
     request: ChatCompletionRequest, question: str, bypass_rag: bool = False
 ) -> ChatCompletionResponse:
     """Handle standard non-streaming request with optional RAG."""
+    profiler = Profiler.start_request()
+    profiler.is_streaming = False
+    
     from starlette.concurrency import run_in_threadpool
     try:
         if bypass_rag:
@@ -260,6 +264,8 @@ async def _handle_non_streaming(
         f"Chat completion response — {len(citations)} citation(s), "
         f"{response.usage.total_tokens} est. tokens"
     )
+    
+    profiler.finalize()
     return response
 
 
@@ -271,6 +277,9 @@ async def _handle_streaming(
     request: ChatCompletionRequest, question: str, bypass_rag: bool = False
 ) -> StreamingResponse:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    profiler = Profiler.start_request()
+    profiler.is_streaming = True
+    
     from starlette.concurrency import run_in_threadpool
     
     try:
@@ -321,6 +330,7 @@ async def _handle_streaming(
             yield b
 
         citations = await run_in_threadpool(_build_citations, chunks) if chunks else []
+        profiler.mark_phase("citations_built")
         
         # Build mapping for citation matching
         path_to_idx = {}
@@ -348,10 +358,15 @@ async def _handle_streaming(
         inside_bracket = False
         clean_text_so_far = ""
         citation_refs = []
+        first_token = True
 
         # Content events
         try:
             async for token in content_gen:
+                if first_token:
+                    profiler.mark_phase("first_token_received")
+                    first_token = False
+                
                 out_token = ""
                 if '[' in token or ']' in token or inside_bracket:
                     for char in token:
@@ -448,6 +463,7 @@ async def _handle_streaming(
             async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
                 yield b
         
+        profiler.finalize()
         yield b"data: [DONE]\n\n"
 
     return StreamingResponse(
