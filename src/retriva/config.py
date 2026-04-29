@@ -34,25 +34,30 @@ class Settings(BaseSettings):
 
     # Visual model
     visual_base_url: str = "https://openrouter.ai/api/v1"
-    visual_model: str = "qwen/qwen3-vl-32b-instruct"
+    visual_model: str = "google/gemini-2.0-flash-001"
     visual_openai_api_key: Optional[str] = None
     visual_max_tokens: int = 2048
     visual_temperature: float = 0.0
     
-    # Chat model
+    # LLM Settings
     chat_base_url: str = "https://openrouter.ai/api/v1"
-    chat_model: str = "qwen/qwen3.5-27b"
-    chat_openai_api_key: Optional[str] = None
+    chat_model: str = "qwen/qwen-2.5-coder-32b-instruct"
+    chat_openai_api_key: str = ""
     chat_temperature: float = 0.0
     chat_top_p: float = 0.9
+    
+    # Storage and Persistence
+    storage_path: str = str((Path(__file__).resolve().parent.parent.parent / "storage").resolve())
+    kb_mapping_db: str = str((Path(__file__).resolve().parent.parent.parent / "storage" / "kb_mappings.db").resolve())
+    
+    # Retriva constitution
+    retriva_constitution: str = str((Path(__file__).resolve().parent.parent.parent / ".agent" / "rules" / "retriva-constitution.md").resolve())
 
-    # Chunking
-    max_chunk_chars: int = 12000
-    chunk_overlap: int = 500
-    indexing_batch_size: int = 50
-
-    # Retrieving stuff
+    # Retrieval
     retriever_top_k: int = 20
+    
+    # Indexing
+    indexing_batch_size: int = 100
 
     # Extension discovery (comma-separated dotted module paths)
     retriva_extensions: str = ""
@@ -62,7 +67,7 @@ class Settings(BaseSettings):
 
     # Citation metadata limits
     citation_snippet_size: int = 2000
-    max_citations: int = 0
+    max_citations: int = 25
     max_metadata_per_citation: int = 0
 
     # Legacy Injection API
@@ -73,20 +78,22 @@ class Settings(BaseSettings):
     
     # Internal Request Profiler
     enable_internal_profiler: bool = False
-    
+
+    # Pydantic Settings
     model_config = SettingsConfigDict(
-        env_file=str((Path(__file__).resolve().parents[2] / ".env").resolve()), 
-        env_file_encoding="utf-8", 
+        env_file=".env",
+        env_file_encoding="utf-8",
         extra="ignore"
     )
 
-    def model_post_init(self, __context) -> None:
-        """Fall back per-service API keys to the shared openrouter key."""
-        if not self.embedding_openai_api_key:
-            self.embedding_openai_api_key = self.openrouter_openai_api_key
-        if not self.visual_openai_api_key:
-            self.visual_openai_api_key = self.openrouter_openai_api_key
-        if not self.chat_openai_api_key:
-            self.chat_openai_api_key = self.openrouter_openai_api_key
+    def model_post_init(self, __context):
+        """Handle API key fallback to OPENROUTER_OPENAI_API_KEY."""
+        if self.openrouter_openai_api_key:
+            if not self.embedding_openai_api_key:
+                self.embedding_openai_api_key = self.openrouter_openai_api_key
+            if not self.chat_openai_api_key:
+                self.chat_openai_api_key = self.openrouter_openai_api_key
+            if not self.visual_openai_api_key:
+                self.visual_openai_api_key = self.openrouter_openai_api_key
 
 settings = Settings()

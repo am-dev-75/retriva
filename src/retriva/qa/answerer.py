@@ -25,17 +25,45 @@ import retriva.qa.prompting  # noqa: F401 — registers DefaultPromptBuilder
 
 logger = get_logger(__name__)
 
+def _limit_chunks_by_citations(chunks: list[dict], max_citations: int) -> list[dict]:
+    """
+    Limits the number of unique sources (titles) in the context.
+    Also applies a per-source character limit to prevent context explosion
+    from highly descriptive vision model chunks.
+    """
+    if max_citations <= 0:
+        return chunks
+        
+    seen_titles = {} # title -> char_count
+    limited_chunks = []
+    
+    # 1. Title-based filtering
+    for chunk in chunks:
+        title = chunk.get("page_title", "Unknown Page")
+        if title not in seen_titles:
+            if len(seen_titles) >= max_citations:
+                continue
+            seen_titles[title] = 0
+            
+        # 2. Per-source size budgeting (approx 6000 chars per source max)
+        text = chunk.get("text", "")
+        if seen_titles[title] + len(text) > 6000:
+            if seen_titles[title] < 2000: # Ensure at least some text per source
+                 truncated = text[:2000] + " [TRUNCATED]"
+                 limited_chunks.append({**chunk, "text": truncated})
+                 seen_titles[title] += len(truncated)
+            continue
+            
+        limited_chunks.append(chunk)
+        seen_titles[title] += len(text)
+        
+    return limited_chunks
+
 def ask_question(question: str, retriever_top_k: int = 5) -> dict:
-    """
-    Full QA pipeline: Retrieve, Prompt, Generate Chat
-    """
     logger.info(f"Processing question: {question}")
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    
-    # Sanitize question
     sanitized_question = question.replace('"', '').replace("'", "").strip()
-    
     chunks = retriever.retrieve(sanitized_question, top_k=retriever_top_k)
     
     profiler = Profiler.get_current()
@@ -43,63 +71,30 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
         profiler.mark_phase("retrieval_vector_search_complete")
         profiler.mark_phase("retrieval_ranking_complete")
 
-    logger.info(f"Retrieved {len(chunks)} chunks for context.")
+    chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
+    logger.info(f"Final context: {len(chunks)} chunks from up to {settings.max_citations} sources.")
 
     prompt_builder = registry.get_instance("prompt_builder")
     system_prompt = prompt_builder.build_prompt(question, chunks)
     
-    if profiler:
-        profiler.mark_phase("prompt_construction_complete")
-    
-    logger.debug(f"Connecting to chat model ({settings.chat_base_url})...")
-    client = OpenAI(
-        api_key=settings.chat_openai_api_key,
-        base_url=settings.chat_base_url
-    )
-    
-    if profiler:
-        profiler.model = settings.chat_model
-        profiler.provider = settings.chat_base_url
-        profiler.mark_phase("inference_request_sent")
-
+    client = OpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
     response = client.chat.completions.create(
         model=settings.chat_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question}
-        ],
+        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
         temperature=settings.chat_temperature,
         top_p=settings.chat_top_p
     )
     
     answer_text = response.choices[0].message.content
     grounding = validate_grounding(answer_text, chunks)
-
-    return {
-        "answer": answer_text,
-        "retrieved_chunks": chunks,
-        "grounding": grounding
-    }
+    return {"answer": answer_text, "retrieved_chunks": chunks, "grounding": grounding}
 
 
 def ask_question_streaming(question: str, retriever_top_k: int = 5):
-    """
-    Streaming variant of ask_question().
-
-    Returns (chunks, content_generator) where:
-    - chunks: list of retrieved context chunks (for citation building)
-    - content_generator: iterator yielding content strings from the LLM stream
-
-    Note: grounding validation is skipped in streaming mode because it
-    requires the full answer text.
-    """
     logger.info(f"Processing question (streaming): {question}")
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    
-    # Sanitize question: remove ALL quotes for the embedding call to avoid provider issues
     sanitized_question = question.replace('"', '').replace("'", "").strip()
-    
     chunks = retriever.retrieve(sanitized_question, top_k=retriever_top_k)
     
     profiler = Profiler.get_current()
@@ -107,67 +102,29 @@ def ask_question_streaming(question: str, retriever_top_k: int = 5):
         profiler.mark_phase("retrieval_vector_search_complete")
         profiler.mark_phase("retrieval_ranking_complete")
 
-    logger.info(f"Retrieved {len(chunks)} chunks for context.")
+    chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
     prompt_builder = registry.get_instance("prompt_builder")
     system_prompt = prompt_builder.build_prompt(question, chunks)
 
-    if profiler:
-        profiler.mark_phase("prompt_construction_complete")
-
-    logger.debug(f"Connecting to chat model (streaming) ({settings.chat_base_url})...")
-    client = OpenAI(
-        api_key=settings.chat_openai_api_key,
-        base_url=settings.chat_base_url,
-    )
-
-    if profiler:
-        profiler.model = settings.chat_model
-        profiler.provider = settings.chat_base_url
-        profiler.mark_phase("inference_request_sent")
-
+    client = OpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
     stream = client.chat.completions.create(
         model=settings.chat_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question},
-        ],
+        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
         temperature=settings.chat_temperature,
         top_p=settings.chat_top_p,
         stream=True,
     )
 
     def content_generator():
-        first_token = True
         for chunk in stream:
-            if first_token and profiler:
-                profiler.mark_phase("inference_first_token_received")
-                first_token = False
-            
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-        
-        if profiler:
-            profiler.mark_phase("inference_complete")
-
     return chunks, content_generator()
 
 
 def ask_question_without_retrieval(question: str) -> str:
-    """Direct LLM call without retrieval."""
-    profiler = Profiler.get_current()
-    if profiler:
-        profiler.mark_phase("retrieval_vector_search_complete")
-        profiler.mark_phase("retrieval_ranking_complete")
-        profiler.mark_phase("prompt_construction_complete")
-        profiler.model = settings.chat_model
-        profiler.provider = settings.chat_base_url
-        profiler.mark_phase("inference_request_sent")
-
-    client = OpenAI(
-        api_key=settings.chat_openai_api_key,
-        base_url=settings.chat_base_url
-    )
+    client = OpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
     response = client.chat.completions.create(
         model=settings.chat_model,
         messages=[{"role": "user", "content": question}],
@@ -177,20 +134,7 @@ def ask_question_without_retrieval(question: str) -> str:
 
 
 def ask_question_streaming_without_retrieval(question: str):
-    """Direct streaming LLM call without retrieval."""
-    profiler = Profiler.get_current()
-    if profiler:
-        profiler.mark_phase("retrieval_vector_search_complete")
-        profiler.mark_phase("retrieval_ranking_complete")
-        profiler.mark_phase("prompt_construction_complete")
-        profiler.model = settings.chat_model
-        profiler.provider = settings.chat_base_url
-        profiler.mark_phase("inference_request_sent")
-
-    client = OpenAI(
-        api_key=settings.chat_openai_api_key,
-        base_url=settings.chat_base_url
-    )
+    client = OpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
     stream = client.chat.completions.create(
         model=settings.chat_model,
         messages=[{"role": "user", "content": question}],
@@ -199,31 +143,17 @@ def ask_question_streaming_without_retrieval(question: str):
     )
 
     def content_generator():
-        first_token = True
         for chunk in stream:
-            if first_token and profiler:
-                profiler.mark_phase("inference_first_token_received")
-                first_token = False
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-        
-        if profiler:
-            profiler.mark_phase("inference_complete")
-
     return [], content_generator()
 
 async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
-    """
-    Asynchronous streaming variant of ask_question().
-    """
     logger.info(f"Processing question (async streaming): {question}")
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    
-    # Sanitize question
     sanitized_question = question.replace('"', '').replace("'", "").strip()
     
-    # Retrieval is still sync for now, run in threadpool if needed
     from starlette.concurrency import run_in_threadpool
     chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k)
     
@@ -232,83 +162,37 @@ async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
         profiler.mark_phase("retrieval_vector_search_complete")
         profiler.mark_phase("retrieval_ranking_complete")
 
-    logger.info(f"Retrieved {len(chunks)} chunks for context.")
+    chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
     prompt_builder = registry.get_instance("prompt_builder")
     system_prompt = prompt_builder.build_prompt(question, chunks)
 
-    if profiler:
-        profiler.mark_phase("prompt_construction_complete")
-
-    client = AsyncOpenAI(
-        api_key=settings.chat_openai_api_key,
-        base_url=settings.chat_base_url,
-    )
-
-    if profiler:
-        profiler.model = settings.chat_model
-        profiler.provider = settings.chat_base_url
-        profiler.mark_phase("inference_request_sent")
-
+    client = AsyncOpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
     stream = await client.chat.completions.create(
         model=settings.chat_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question},
-        ],
+        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
         temperature=settings.chat_temperature,
         top_p=settings.chat_top_p,
         stream=True,
     )
 
     async def content_generator():
-        first_token = True
         async for chunk in stream:
-            if first_token and profiler:
-                profiler.mark_phase("inference_first_token_received")
-                first_token = False
-                
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-        
-        if profiler:
-            profiler.mark_phase("inference_complete")
-
     return chunks, content_generator()
 
 
 async def ask_question_streaming_without_retrieval_async(question: str):
-    """Asynchronous direct streaming LLM call without retrieval."""
-    profiler = Profiler.get_current()
-    if profiler:
-        profiler.mark_phase("retrieval_vector_search_complete")
-        profiler.mark_phase("retrieval_ranking_complete")
-        profiler.mark_phase("prompt_construction_complete")
-        profiler.model = settings.chat_model
-        profiler.provider = settings.chat_base_url
-        profiler.mark_phase("inference_request_sent")
-
-    client = AsyncOpenAI(
-        api_key=settings.chat_openai_api_key,
-        base_url=settings.chat_base_url
-    )
+    client = AsyncOpenAI(api_key=settings.chat_openai_api_key, base_url=settings.chat_base_url)
     stream = await client.chat.completions.create(
         model=settings.chat_model,
         messages=[{"role": "user", "content": question}],
         temperature=settings.chat_temperature,
         stream=True,
     )
-
     async def content_generator():
-        first_token = True
         async for chunk in stream:
-            if first_token and profiler:
-                profiler.mark_phase("inference_first_token_received")
-                first_token = False
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-        
-        if profiler:
-            profiler.mark_phase("inference_complete")
-
     return [], content_generator()

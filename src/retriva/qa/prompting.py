@@ -23,19 +23,34 @@ def build_prompt(question: str, retrieved_chunks: List[Dict]) -> str:
     this work the context blocks must carry identifiable source labels and
     the LLM must be instructed to reference those labels.
     """
+    # Group chunks by title to avoid duplicate source IDs in the prompt
+    grouped = {}
+    for chunk in retrieved_chunks:
+        title = chunk.get("page_title", "Unknown Page")
+        if title not in grouped:
+            grouped[title] = {
+                "url": chunk.get("canonical_doc_id", chunk.get("source_path", "")),
+                "texts": [chunk.get("text", "")]
+            }
+        else:
+            # Only add if text is not exactly the same
+            new_text = chunk.get("text", "")
+            if new_text not in grouped[title]["texts"]:
+                grouped[title]["texts"].append(new_text)
+
     context_str = ""
     source_list = ""
-    for idx, chunk in enumerate(retrieved_chunks):
-        title = chunk.get("page_title", "Unknown Page")
-        url = chunk.get("canonical_doc_id", chunk.get("source_path", ""))
-        text = chunk.get("text", "")
+    for title, data in grouped.items():
+        url = data["url"]
+        combined_text = "\n\n---\n\n".join(data["texts"])
         source_id = f"[{title}]"
-        # Build context block with source tag
+        
+        # Build context block with unique source tag
         context_str += (
             f"\n<source id=\"{title}\">\n"
             f"Source: {title}\n"
             f"URL: {url}\n"
-            f"{text}\n"
+            f"{combined_text}\n"
             f"</source>\n"
         )
         source_list += f"  - {source_id}\n"
@@ -46,7 +61,7 @@ If the context does not contain sufficient evidence to answer the question, you 
 
 CITATION RULES:
 - Support your factual claims with citations using the exact source names provided.
-- Use the format [Source Title] for each citation, e.g. {retrieved_chunks[0].get("page_title", "Example Page") if retrieved_chunks else "Example Page"}.
+- Use the format [Source Title] for each citation.
 - You may cite multiple sources in one sentence.
 - Available sources:
 {source_list}

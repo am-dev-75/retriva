@@ -69,7 +69,6 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
     """Extract citation metadata from retrieved chunk payloads in Open WebUI format."""
     by_norm_title = {}
     for chunk in chunks:
-        # Group by normalized title (alphanumeric only)
         # Try to get a human-friendly title first
         raw_title = chunk.get("page_title")
         if not raw_title:
@@ -78,11 +77,11 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
              if raw_title == "Unknown":
                  raw_title = "Unknown Source"
         
-        # Use path + title as the unique key to avoid aggressive normalization
-        path = chunk.get("source_path", "unknown")
-        norm_key = f"{path}:{raw_title}"
+        # Group by title to match the simplified prompt builder logic
+        norm_key = raw_title
         
         text = chunk.get("text", "")
+        path = chunk.get("source_path", "unknown")
         
         if norm_key not in by_norm_title:
             by_norm_title[norm_key] = {
@@ -91,9 +90,11 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
                 "metadata": [{"source": path, "title": raw_title, "user_metadata": chunk.get("user_metadata")}]
             }
         else:
-            # Add to existing title group
-            by_norm_title[norm_key]["document"].append(text)
-            # Only add unique metadata entries
+            # Deduplicate text snippets
+            if text not in by_norm_title[norm_key]["document"]:
+                by_norm_title[norm_key]["document"].append(text)
+            
+            # Only add unique metadata entries (per path)
             if not any(m["source"] == path for m in by_norm_title[norm_key]["metadata"]):
                 # Apply per-citation metadata limit
                 if settings.max_metadata_per_citation <= 0 or len(by_norm_title[norm_key]["metadata"]) < settings.max_metadata_per_citation:
@@ -101,7 +102,7 @@ def _build_citations(chunks: list[dict]) -> list[Citation]:
 
     results = [Citation(**v) for v in by_norm_title.values()]
     
-    # Apply total citations limit
+    # Apply total citations limit (important to prevent LLM/UI overwhelm)
     if settings.max_citations > 0:
         results = results[:settings.max_citations]
         
@@ -196,7 +197,7 @@ def _build_citation_refs(answer: str, citations: list[Citation]) -> tuple[str, s
 
 
 # ---------------------------------------------------------------------------
-# Non-streaming handler (existing behaviour, unchanged)
+# Non-streaming handler
 # ---------------------------------------------------------------------------
 
 async def _handle_non_streaming(
@@ -283,17 +284,27 @@ async def _handle_streaming(
         logger.error(f"QA pipeline error (streaming init): {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"QA pipeline error: {e}",
+            detail=f"QA pipeline error (streaming init): {e}",
         )
 
     async def _sse_generator():
+        MAX_SSE_PAYLOAD = 12000 # ~12KB limit per line for extreme safety
+
         async def _normalized_yield(data_json: str):
             """
-            Yields a single SSE data event.
-            We no longer split lines with \n to avoid breaking JSON strings.
-            Size is managed by the citation batching logic below.
+            Yields SSE data event(s). If the payload exceeds MAX_SSE_PAYLOAD,
+            it is split into multiple 'data:' lines using the SSE multiline protocol.
+            Each line is yielded separately to force network flushes.
             """
-            yield f"data: {data_json}\n\n".encode("utf-8")
+            if len(data_json) <= MAX_SSE_PAYLOAD:
+                yield f"data: {data_json}\n\n".encode("utf-8")
+            else:
+                parts = [data_json[i : i + MAX_SSE_PAYLOAD] for i in range(0, len(data_json), MAX_SSE_PAYLOAD)]
+                for i, part in enumerate(parts):
+                    if i == len(parts) - 1:
+                        yield f"data: {part}\n\n".encode("utf-8")
+                    else:
+                        yield f"data: {part}\n".encode("utf-8")
 
         # First event: role announcement
         first_chunk = ChatCompletionChunk(
@@ -311,7 +322,7 @@ async def _handle_streaming(
 
         citations = await run_in_threadpool(_build_citations, chunks) if chunks else []
         
-        # Build a robust mapping from any possible title/path to the grouped citation index
+        # Build mapping for citation matching
         path_to_idx = {}
         for i, c in enumerate(citations):
             for meta in c.metadata:
@@ -322,26 +333,18 @@ async def _handle_streaming(
             path = chunk.get("source_path", "unknown")
             if path in path_to_idx:
                 idx = path_to_idx[path]
-                # Map both the page title and the raw filename to this citation index
                 title = chunk.get("page_title")
                 if title:
                     title_to_idx[title] = idx
-                
                 filename = Path(path).name.lower()
                 title_to_idx[filename] = idx
-                # Also map without extension
                 title_to_idx[Path(path).stem.lower()] = idx
-                # Also map the display title we generated
                 display_title = citations[idx].source.get("name")
                 if display_title:
                     display_title = display_title.lower()
                     title_to_idx[display_title] = idx
-                    title_to_idx[display_title.replace(' ', '')] = idx
-                    if '.' in display_title:
-                         title_to_idx[display_title.rsplit('.', 1)[0]] = idx
         
         buffer = ""
-        out_chunk = ""
         inside_bracket = False
         clean_text_so_far = ""
         citation_refs = []
@@ -349,10 +352,7 @@ async def _handle_streaming(
         # Content events
         try:
             async for token in content_gen:
-                clean_token = ""
                 out_token = ""
-                
-                # Check for [Title] in the token more efficiently
                 if '[' in token or ']' in token or inside_bracket:
                     for char in token:
                         if not inside_bracket:
@@ -367,21 +367,11 @@ async def _handle_streaming(
                             if char == ']':
                                 inside_bracket = False
                                 content = buffer[1:-1].strip().lower()
-                                
-                                citation_idx = None
-                                if content in title_to_idx:
-                                    citation_idx = title_to_idx[content]
-                                else:
-                                    # Fuzzy match for truncated titles
-                                    clean_content = content.replace('...', '')
+                                citation_idx = title_to_idx.get(content)
+                                if citation_idx is None:
+                                    # Fuzzy match
                                     for t, i in title_to_idx.items():
-                                        if len(clean_content) > 10:
-                                            prefix = clean_content[:10]
-                                            suffix = clean_content[-10:]
-                                            if t.startswith(prefix) and t.endswith(suffix):
-                                                citation_idx = i
-                                                break
-                                        if len(content) > 5 and (t.startswith(content) or t.endswith(content)):
+                                        if content in t or t in content:
                                             citation_idx = i
                                             break
 
@@ -389,13 +379,6 @@ async def _handle_streaming(
                                     end_index = len(clean_text_so_far)
                                     sentence_start = clean_text_so_far.rfind('.')
                                     start_index = sentence_start + 1 if sentence_start != -1 else 0
-                                    nl_start = clean_text_so_far.rfind('\n')
-                                    if nl_start != -1 and nl_start > sentence_start:
-                                        start_index = nl_start + 1
-                                            
-                                    while start_index < end_index and clean_text_so_far[start_index].isspace():
-                                        start_index += 1
-                                        
                                     citation_refs.append(
                                         CitationRef(
                                             start_index=max(0, start_index),
@@ -419,44 +402,22 @@ async def _handle_streaming(
                     )
                     async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                         yield b
-
-            if buffer:
-                chunk = ChatCompletionChunk(
-                    id=completion_id,
-                    choices=[StreamingChoice(index=0, delta=DeltaContent(content=buffer), finish_reason=None)],
-                )
-                async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
-                    yield b
-                clean_text_so_far += buffer
-                
         except Exception as e:
             logger.error(f"Streaming error mid-flight: {e}")
-            # Close the stream gracefully — client will see truncated output
 
-        # Prepare sources for metadata
+        # Prepare sources
         all_sources = []
         for c in citations:
-            # Join fragments and truncate based on setting
             limit = settings.citation_snippet_size
             joined_doc = "\n\n---\n\n".join(c.document)
             if limit > 0 and len(joined_doc) > limit:
                 joined_doc = joined_doc[:limit] + "..."
-                
-            all_sources.append(
-                Citation(
-                    source=c.source,
-                    document=[joined_doc],
-                    metadata=c.metadata
-                )
-            )
+            all_sources.append(Citation(source=c.source, document=[joined_doc], metadata=c.metadata))
 
-        # Final events: split citations into batches and append numbered source list
         if all_sources:
-            # 1. Append the numbered sources text list to the answer
             sources_text = "\n\nSources:\n"
             for i, c in enumerate(all_sources):
-                name = c.source.get("name", "Unknown")
-                sources_text += f"[{i+1}] {name}\n"
+                sources_text += f"[{i+1}] {c.source.get('name', 'Unknown')}\n"
             
             text_chunk = ChatCompletionChunk(
                 id=completion_id,
@@ -465,52 +426,21 @@ async def _handle_streaming(
             async for b in _normalized_yield(text_chunk.model_dump_json(exclude_none=True)):
                 yield b
             
-            # 2. Send citations in batches in the metadata
-            current_batch = []
-            current_batch_size = 0
-            
             for i, c in enumerate(all_sources):
-                c_json = c.model_dump_json(exclude_none=True)
-                # Keep individual events small (approx 10KB) to stay safe for all proxies
-                if current_batch and (current_batch_size + len(c_json) > 10000):
-                    metadata_payload = MessageMetadata(
-                        sources=current_batch,
-                        citation_refs=citation_refs if i == len(all_sources) - 1 else [],
-                        output_text=clean_text_so_far if i == len(all_sources) - 1 else ""
-                    )
-                    chunk = ChatCompletionChunk(
-                        id=completion_id,
-                        choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason=None)],
-                        metadata=metadata_payload,
-                    )
-                    async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
-                        yield b
-                    
-                    # Small sleep to allow the event loop to flush the socket and avoid buffering issues
-                    await asyncio.sleep(0.02)
-                    
-                    current_batch = [c]
-                    current_batch_size = len(c_json)
-                else:
-                    current_batch.append(c)
-                    current_batch_size += len(c_json)
-            
-            # Final batch with 'stop' reason
-            if current_batch:
                 metadata_payload = MessageMetadata(
-                    sources=current_batch,
-                    citation_refs=citation_refs,
-                    output_text=clean_text_so_far
+                    sources=[c],
+                    citation_refs=citation_refs if i == len(all_sources) - 1 else [],
+                    output_text=clean_text_so_far if i == len(all_sources) - 1 else ""
                 )
-                stop_chunk = ChatCompletionChunk(
+                chunk = ChatCompletionChunk(
                     id=completion_id,
-                    choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop")],
+                    choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop" if i == len(all_sources) - 1 else None)],
                     metadata=metadata_payload,
                 )
-                async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
+                async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                     yield b
+                await asyncio.sleep(0.01)
         else:
-            # No citations, just send stop
             stop_chunk = ChatCompletionChunk(
                 id=completion_id,
                 choices=[StreamingChoice(index=0, delta=DeltaContent(), finish_reason="stop")],
@@ -518,11 +448,7 @@ async def _handle_streaming(
             async for b in _normalized_yield(stop_chunk.model_dump_json(exclude_none=True)):
                 yield b
         
-        # Ensure the final event is flushed
-        await asyncio.sleep(0.01)
         yield b"data: [DONE]\n\n"
-
-
 
     return StreamingResponse(
         _sse_generator(),
@@ -535,30 +461,11 @@ async def _handle_streaming(
     )
 
 
-# ---------------------------------------------------------------------------
-# Main endpoint
-# ---------------------------------------------------------------------------
-
 @router.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest):
-    """
-    OpenAI-compatible chat completions endpoint.
-
-    When ``stream=false`` (default): returns a single JSON ChatCompletion.
-    When ``stream=true``: returns an SSE stream of ChatCompletionChunk events
-    following the OpenAI delta protocol.
-    """
     question = _extract_user_question(request)
-    
     bypass_rag = question.startswith("### Task:")
-    if bypass_rag:
-        logger.info("System task detected, bypassing RAG.")
     
-    logger.info(
-        f"Chat completion request (stream={request.stream}) — "
-        f"question: {question[:120]}..."
-    )
-
     if request.stream:
         return await _handle_streaming(request, question, bypass_rag=bypass_rag)
     else:
