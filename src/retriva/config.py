@@ -73,6 +73,8 @@ class Settings(BaseSettings):
 
     # Indexing
     indexing_batch_size: int = 100
+    max_chunk_chars: int = 2000
+    chunk_overlap: int = 200
 
     # Extension discovery (comma-separated dotted module paths)
     retriva_extensions: str = ""

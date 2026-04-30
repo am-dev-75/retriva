@@ -90,8 +90,11 @@ def process_pdf_page_in_background(payload: PdfIngestRequest, job_id: str):
         manager.fail_job(job_id, str(e))
         logger.error(f"Job {job_id} failed: {e}")
 
-
 def process_pdf_upload_in_background(temp_path: str, source_path: str, page_title: str, job_id: str, user_metadata=None):
+    logger.debug(f"process_pdf_upload_in_background")
+    logger.debug(f"user_metadata={user_metadata}")
+    logger.debug(f"source_path={source_path}")
+    logger.debug(f"job_id={job_id}")
     manager = JobManager()
     manager.start_job(job_id)
     cancel_check = lambda: manager.is_cancel_requested(job_id)
@@ -198,6 +201,10 @@ async def ingest_pdf_upload(
 ):
     """Ingest a raw PDF file upload."""
     logger.debug(f"Received PDF file upload: '{file.filename}'")
+    logger.debug(f"user_metadata={user_metadata}")
+    logger.debug(f"source_path={source_path}")
+    logger.debug(f"page_title={page_title}")
+    logger.debug(f"file={file}")
 
     # Deserialise JSON-encoded user_metadata from form field
     parsed_metadata = None
