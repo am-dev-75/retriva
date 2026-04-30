@@ -5,20 +5,20 @@
     - [Open WebUI Integration](#open-webui-integration)
       - [File uploading](#file-uploading)
       - [Special-purpose directives](#special-purpose-directives)
-      - [Ingestion Tagging](#ingestion-tagging)
-        - [What tagging does](#what-tagging-does)
-        - [Starting tagging](#starting-tagging)
-        - [Replacing tags](#replacing-tags)
-        - [Uploading documents with tags](#uploading-documents-with-tags)
-        - [Stopping tagging](#stopping-tagging)
-        - [Scope and lifetime](#scope-and-lifetime)
-        - [Things to know](#things-to-know)
-        - [Quick reference](#quick-reference)
+        - [Ingestion Tagging](#ingestion-tagging)
+          - [What tagging does](#what-tagging-does)
+          - [Starting tagging (`@@ingestion_tag_start`)](#starting-tagging-ingestion_tag_start)
+          - [Replacing tags](#replacing-tags)
+          - [Uploading documents with tags](#uploading-documents-with-tags)
+          - [Stopping tagging (`@@ingestion_tag_stop`)](#stopping-tagging-ingestion_tag_stop)
+          - [Scope and lifetime](#scope-and-lifetime)
+          - [Things to know](#things-to-know)
+          - [Quick reference](#quick-reference)
   - [Development](#development)
     - [Debugging information](#debugging-information)
       - [Document mappings](#document-mappings)
         - [/internal/mappings/documents](#internalmappingsdocuments)
-        - [/internal/mappings/documents/{owui\_file\_id}](#internalmappingsdocumentsowui_file_id)
+        - [/internal/mappings/documents/ {owui\_file\_id}](#internalmappingsdocuments-owui_file_id)
         - [/internal/mappings/knowledge-bases](#internalmappingsknowledge-bases)
 
 ## Usage
@@ -173,16 +173,17 @@ $ curl http://localhost:8002/internal/mappings/documents | jq
   }
 ]
 ```
+
 #### Special-purpose directives
 
 Some functions of Retriva are controlled through chat directives. Directives are special messages you send in the chat. Directives are not interpreted as normal questions/requests and, hence, they do not trigger the AI to answer.
 
-#### Ingestion Tagging
+##### Ingestion Tagging
 
 The tagging feature is controlled through chat directives.
 This section explains how to attach metadata tags to documents you upload so they can be grouped, filtered, and retrieved more precisely later.
 
-##### What tagging does
+###### What tagging does
 
 When tagging is active:
 
@@ -194,7 +195,54 @@ When tagging is active:
   * Milestones or phases
   * Topics, domains, or document classes
 
-##### Starting tagging
+Tags are stored in the field `user_metadata` in the database. The following image shows an example of a point stored in Qdrant with user-provided data.
+![](assets/qdrant-user_metadata.png)
+
+With `curl`:
+```
+$ curl -X POST 'http://192.168.1.64:6333/collections/retriva_chunks/points/scroll' --header 'Content-Type: application/json' --data-raw '{
+    "filter": {
+        "must": [
+            {
+                "key": "user_metadata.topic",
+                "match": {
+                    "value": "CRA"
+                }
+            }
+        ]
+    },
+    "limit": 10,
+    "with_payload": true
+}' | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 19725  100 19475  100   250   179k   2356 --:--:-- --:--:-- --:--:--  181k
+{
+  "result": {
+    "points": [
+      {
+        "id": "070d1f8a-3612-9ebb-8bde-d9cd4becde0c",
+        "payload": {
+          "text": "d ensures that user data and credentials are reliably erased. Through its scriptable interface\nand integration capabilities, Rugix can be used with external fleet management systems like Cumulocity to\ncoordinate updates, monitor device health, and react to vulnerabilities in the field.\n2 Some of the features described here are still under development and available as early previews. Contact us to learn more.\n9",                                                            
+          "doc_id": "owui:e5c2ce54-8223-4cd7-9df1-0be4becf22f4#p8",
+          "source_path": "owui:e5c2ce54-8223-4cd7-9df1-0be4becf22f4",
+          "page_title": "ey-gl-practical-refrence-architecture-for-cra-compliance-11-2025.pdf",
+          "section_path": "Page 8",
+          "chunk_id": "070d1f8a36129ebb8bded9cd4becde0c",
+          "chunk_index": 1,
+          "chunk_type": "text",
+          "language": "en",
+          "image_path": null,
+          "user_metadata": {
+            "topic": "CRA",
+            "keywords": "cybersecurity"
+          }
+        }
+      },
+...
+```
+
+###### Starting tagging (`@@ingestion_tag_start`)
 
 To start (or replace) ingestion tagging, send the start directive followed by one or more `key: value` lines:
 
@@ -216,7 +264,7 @@ After this:
 
 **Important**: Each `@@ingestion_tag_start` replaces any previously active tags. Tags are not merged.
 
-##### Replacing tags
+###### Replacing tags
 
 You can change the active tags at any time by sending another start directive:
 
@@ -230,7 +278,7 @@ From this point on, new uploads receive `poc`, `step`, and `customer`.
 
 Previous tags such as project or milestone are no longer applied.
 
-##### Uploading documents with tags
+###### Uploading documents with tags
 
 Once tagging is active, simply upload one or more files.
 
@@ -243,7 +291,7 @@ You do not need to type a message when uploading. The system will not generate a
 
 The actual ingestion happens asynchronously in the background.
 
-##### Stopping tagging
+###### Stopping tagging (`@@ingestion_tag_stop`)
 
 To stop applying tags to future uploads, send the stop directive:
 
@@ -261,15 +309,15 @@ After this:
 
 Uploads continue to work normally, i.e. no user-defined tags are applied.
 
-##### Scope and lifetime
+###### Scope and lifetime
 
 Tagging is per chat. Tags remain active until you change or stop them. Restarting the system clears the tagging state. Already ingested documents are not modified when tags change.
 
-##### Things to know
+###### Things to know
 
 Directives are commands, not questions. Uploading files does not trigger an AI response. You may see multiple internal system messages behind the scenes; these are normal and safely ignored. Only documents uploaded after a start directive receive tags.
 
-##### Quick reference
+###### Quick reference
 
 
 |     | Action                | Directive                |
@@ -289,15 +337,19 @@ As mentioned in the [Licensing notes](README.md#licensing-notes), Retriva suppor
 Open WebUI / Retriva Adapter provides some debugging endpoints that can be used to inspect the internal state of Retriva. To enable these endpoints, set the `THIN_ADAPTER_DEBUG_ENDPOINTS` environment variable to `true`.
 
 This can be done in the `.env` file ...
+
 ```bash
 export THIN_ADAPTER_DEBUG_ENDPOINTS=true
 ```
+
 ... or by setting the environment variable in the shell where you start the adapter:
+
 ```bash
 (open-webui_retriva-adapter) llandre@vm-ubnt-24-04-4:/mnt/shared/implementation/open-webui_retriva-adapter$ THIN_ADAPTER_DEBUG_ENDPOINTS=true PYTHONPATH=src python -m adapter
 ```
 
 #### Document mappings
+
 ##### /internal/mappings/documents
 
 This endpoint answers the following question: **For each OWUI file, which Retriva document did we create, and what is its ingestion status?**
@@ -346,7 +398,9 @@ Output example:
   }
 ]
 ```
-##### /internal/mappings/documents/{owui_file_id}
+
+##### /internal/mappings/documents/ {owui_file_id}
+
 This endpoint answers the following question: **For a given OWUI file, which Retriva document did we create, and what is its ingestion status?**
 
 ```
