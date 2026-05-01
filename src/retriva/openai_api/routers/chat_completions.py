@@ -360,6 +360,7 @@ async def _handle_streaming(
         citation_refs = []
         first_token = True
 
+        full_answer = ""
         # Content events
         try:
             async for token in content_gen:
@@ -411,12 +412,15 @@ async def _handle_streaming(
                     clean_text_so_far += token
 
                 if out_token:
+                    full_answer += out_token
                     chunk = ChatCompletionChunk(
                         id=completion_id,
                         choices=[StreamingChoice(index=0, delta=DeltaContent(content=out_token), finish_reason=None)],
                     )
                     async for b in _normalized_yield(chunk.model_dump_json(exclude_none=True)):
                         yield b
+            
+            logger.debug(f"LLM Answer (streaming): {full_answer}")
         except Exception as e:
             logger.error(f"Streaming error mid-flight: {e}")
 

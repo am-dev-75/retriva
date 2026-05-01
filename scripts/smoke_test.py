@@ -18,8 +18,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 from retriva.qa.answerer import ask_question
 from retriva.config import settings
 from openai import OpenAI
-from retriva.logger import get_logger
+from retriva.logger import get_logger, setup_logging
 
+setup_logging()
 logger = get_logger("smoke_test")
 
 # Colors for CLI
@@ -41,7 +42,7 @@ def parse_golden_answers() -> List[Tuple[str, str]]:
     Sources:
     """
     if not GOLDEN_ANSWERS_PATH.exists():
-        print(f"{RED}Error: Golden answers file not found at {GOLDEN_ANSWERS_PATH}{RESET}")
+        logger.debug(f"{RED}Error: Golden answers file not found at {GOLDEN_ANSWERS_PATH}{RESET}")
         return []
 
     content = GOLDEN_ANSWERS_PATH.read_text()
@@ -99,46 +100,46 @@ Respond ONLY with "YES" or "NO" followed by a short one-sentence explanation.
         return False, f"Judge error: {str(e)}"
 
 def run_smoke_test():
-    print(f"\n{BOLD}Retriva Smoke Test — Golden Answer Validation{RESET}")
-    print(f"Loading reference: {GOLDEN_ANSWERS_PATH}\n")
+    logger.info(f"\n{BOLD}Retriva Smoke Test — Golden Answer Validation{RESET}")
+    logger.debug(f"Loading reference: {GOLDEN_ANSWERS_PATH}\n")
 
     qa_pairs = parse_golden_answers()
     if not qa_pairs:
-        print(f"{RED}No QA pairs found in reference file.{RESET}")
+        logger.debug(f"{RED}No QA pairs found in reference file.{RESET}")
         return
 
     passed = 0
     total = len(qa_pairs)
 
     for i, (question, golden) in enumerate(qa_pairs, 1):
-        print(f"{BOLD}[{i}/{total}] Testing:{RESET} {question}")
+        logger.info(f"{BOLD}[{i}/{total}] Testing:{RESET} {question}")
         
         # 1. Run Pipeline
         try:
             result = ask_question(question, retriever_top_k=settings.retriever_top_k)
             generated = result["answer"]
         except Exception as e:
-            print(f"  {RED}FAILED (Pipeline Error):{RESET} {str(e)}\n")
+            logger.info(f"  {RED}FAILED (Pipeline Error):{RESET} {str(e)}\n")
             continue
 
         # 2. Judge
-        print(f"  {BOLD}Judging...{RESET}")
+        logger.debug(f"  {BOLD}Judging...{RESET}")
         is_pass, explanation = judge_answer(question, golden, generated)
 
         if is_pass:
-            print(f"  {GREEN}PASSED:{RESET} {explanation}\n")
+            logger.info(f"  {GREEN}PASSED:{RESET} {explanation}\n")
             passed += 1
         else:
-            print(f"  {RED}FAILED:{RESET} {explanation}")
-            print(f"\n  {BOLD}--- EXPECTED (GOLDEN) ---{RESET}")
-            print(golden)
-            print(f"\n  {BOLD}--- ACTUAL (GENERATED) ---{RESET}")
-            print(generated)
-            print(f"\n  {BOLD}--------------------------{RESET}\n")
+            logger.info(f"  {RED}FAILED:{RESET} {explanation}")
+            logger.debug(f"\n  {BOLD}--- EXPECTED (GOLDEN) ---{RESET}")
+            logger.debug(golden)
+            logger.debug(f"\n  {BOLD}--- ACTUAL (GENERATED) ---{RESET}")
+            logger.debug(generated)
+            logger.debug(f"\n  {BOLD}--------------------------{RESET}\n")
 
     # Final Summary
     color = GREEN if passed == total else RED
-    print(f"{BOLD}Summary:{RESET} {color}{passed}/{total} Passed{RESET}")
+    logger.info(f"{BOLD}Summary:{RESET} {color}{passed}/{total} Passed{RESET}")
     
     if passed == total:
         sys.exit(0)

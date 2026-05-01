@@ -175,6 +175,7 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     if answer_text is None:
         answer_text = ""
         
+    logger.debug(f"LLM Answer: {answer_text}")
     grounding = validate_grounding(answer_text, chunks)
     return {"answer": answer_text, "retrieved_chunks": chunks, "grounding": grounding}
 
@@ -219,7 +220,9 @@ def ask_question_without_retrieval(question: str) -> str:
     )
     if not response.choices:
         return "Error: LLM returned an empty response."
-    return response.choices[0].message.content or ""
+    answer_text = response.choices[0].message.content or ""
+    logger.debug(f"LLM Answer: {answer_text}")
+    return answer_text
 
 
 def ask_question_streaming_without_retrieval(question: str):
