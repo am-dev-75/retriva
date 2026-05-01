@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, status
 from retriva.ingestion_api.schemas import ChunkIngestRequest, IngestResponse
 from retriva.indexing.qdrant_store import get_client, upsert_chunks, init_collection, COLLECTION_NAME
@@ -31,6 +32,13 @@ def process_chunks_in_background(payload: ChunkIngestRequest, job_id: str):
         if not payload.chunks:
             manager.complete_job(job_id)
             return
+
+        # Ensure ingestion_timestamp is set for all chunks
+        ts = datetime.now(timezone.utc).isoformat()
+        for chunk in payload.chunks:
+            if not chunk.metadata.ingestion_timestamp:
+                chunk.metadata.ingestion_timestamp = ts
+
         client = get_client()
         upsert_chunks(client, payload.chunks, cancel_check=cancel_check)
         manager.complete_job(job_id)

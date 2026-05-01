@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, status
 from retriva.ingestion_api.schemas import ImageIngestRequest, IngestResponse
@@ -72,6 +73,7 @@ def process_image_in_background(payload: ImageIngestRequest, job_id: str):
             chunk_type="image",
             language="en",
             image_path=payload.file_path,
+            ingestion_timestamp=datetime.now(timezone.utc).isoformat(),
             user_metadata=payload.user_metadata,
         )
 

@@ -25,6 +25,7 @@ class ChunkMetadata(BaseModel):
     chunk_type: str = "text"
     language: str = "en"
     image_path: Optional[str] = None
+    ingestion_timestamp: Optional[str] = None
     user_metadata: Optional[Dict[str, str]] = None
 
 class Chunk(BaseModel):

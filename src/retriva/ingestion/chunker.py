@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import hashlib
+from datetime import datetime, timezone
 from typing import List
 from retriva.domain.models import Chunk, ChunkMetadata, ParsedDocument
 from retriva.logger import get_logger
@@ -66,11 +67,14 @@ def recursive_split_text(text: str, max_chars: int, overlap: int) -> List[str]:
     chunks.extend(recursive_split_text(right, max_chars, actual_overlap))
     return chunks
 
-def create_image_chunks(document: ParsedDocument) -> List[Chunk]:
+def create_image_chunks(document: ParsedDocument, ingestion_timestamp: str = None) -> List[Chunk]:
     """
     Creates chunks from the extracted images for dense retrieval formatting.
     If VLM description is available, it becomes the primary text content.
     """
+    if ingestion_timestamp is None:
+        ingestion_timestamp = datetime.now(timezone.utc).isoformat()
+
     chunks = []
     for idx, img in enumerate(document.images):
         if img.vlm_description:
@@ -99,6 +103,7 @@ def create_image_chunks(document: ParsedDocument) -> List[Chunk]:
             chunk_type="image",
             language=document.language,
             image_path=img.src,
+            ingestion_timestamp=ingestion_timestamp,
             user_metadata=document.user_metadata,
         )
         
@@ -111,6 +116,8 @@ def create_chunks(document: ParsedDocument) -> List[Chunk]:
     """
     Splits the parsed document text into chunks under the character limit.
     """
+    ingestion_timestamp = datetime.now(timezone.utc).isoformat()
+
     paragraphs = [p.strip() for p in document.content_text.split("\n\n") if p.strip()]
     logger.debug(f"Splitting '{document.source_path}' into {len(paragraphs)} initial paragraphs...")
     
@@ -135,13 +142,14 @@ def create_chunks(document: ParsedDocument) -> List[Chunk]:
             chunk_index=idx,
             chunk_type="text",
             language=document.language,
+            ingestion_timestamp=ingestion_timestamp,
             user_metadata=document.user_metadata,
         )
         
         chunk = Chunk(text=text, metadata=meta)
         chunks.append(chunk)
         
-    image_chunks = create_image_chunks(document)
+    image_chunks = create_image_chunks(document, ingestion_timestamp=ingestion_timestamp)
     chunks.extend(image_chunks)
         
     document.chunks = chunks
