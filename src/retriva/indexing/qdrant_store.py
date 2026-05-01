@@ -14,7 +14,7 @@
 
 import time
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.models import VectorParams, Distance, PointStruct, Filter, FieldCondition, MatchValue
 from qdrant_client.http.exceptions import ResponseHandlingException
 from retriva.config import settings
 from retriva.domain.models import Chunk
@@ -107,3 +107,21 @@ def search_chunks(client: QdrantClient, query_vector: List[float], retriever_top
         limit=retriever_top_k
     )
     return [hit.payload for hit in results.points]
+
+
+def delete_chunks_by_source_path(client: QdrantClient, source_path: str):
+    """
+    Delete all chunks (points) in Qdrant that belong to the given source_path.
+    """
+    logger.info(f"Deleting chunks for source_path: {source_path}")
+    client.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=Filter(
+            must=[
+                FieldCondition(
+                    key="source_path",
+                    match=MatchValue(value=source_path),
+                )
+            ]
+        ),
+    )
