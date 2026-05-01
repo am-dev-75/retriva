@@ -167,7 +167,14 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
         top_p=settings.chat_top_p
     )
     
+    if not response.choices:
+        logger.error("LLM returned an empty response (no choices).")
+        return {"answer": "Error: LLM returned an empty response.", "retrieved_chunks": chunks, "grounding": []}
+        
     answer_text = response.choices[0].message.content
+    if answer_text is None:
+        answer_text = ""
+        
     grounding = validate_grounding(answer_text, chunks)
     return {"answer": answer_text, "retrieved_chunks": chunks, "grounding": grounding}
 
@@ -196,8 +203,10 @@ def ask_question_streaming(question: str, retriever_top_k: int = 5):
 
     def content_generator():
         for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
     return chunks, content_generator()
 
 
@@ -208,7 +217,9 @@ def ask_question_without_retrieval(question: str) -> str:
         messages=[{"role": "user", "content": question}],
         temperature=settings.chat_temperature,
     )
-    return response.choices[0].message.content
+    if not response.choices:
+        return "Error: LLM returned an empty response."
+    return response.choices[0].message.content or ""
 
 
 def ask_question_streaming_without_retrieval(question: str):
@@ -222,8 +233,10 @@ def ask_question_streaming_without_retrieval(question: str):
 
     def content_generator():
         for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
     return [], content_generator()
 
 async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
@@ -270,8 +283,10 @@ async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
 
     async def content_generator():
         async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
     return chunks, content_generator()
 
 
@@ -285,6 +300,8 @@ async def ask_question_streaming_without_retrieval_async(question: str):
     )
     async def content_generator():
         async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
     return [], content_generator()
