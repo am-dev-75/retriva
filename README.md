@@ -226,13 +226,19 @@ For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
 (retriva-venv) $ PYTHONPATH=src python -m retriva.openai_api
 ```
 
-* Start an instance of [Open WebUI for Retriva](https://github.com/am-dev-75/open-webui_retriva).
+* Clone the https://github.com/am-dev-75/open-webui_retriva repository.
+* Modify the docker-compose.yml file
+  * to mount the Open WebUI data directory to a persistent volume
+  * to adjust the URL of Open WebUI adapter for Retriva.
+* Start a containerized instance of [Open WebUI for Retriva](https://github.com/am-dev-75/open-webui_retriva).
 * In Open WebUI (OWUI)
   * create admin user
-  * in Admin panel->Settings, enable the flag "Enable API Keys"
   * in User'settings->Account create the API key.
-  * copy this API key in the [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter)'s `.env` file so that the adapter che authenticate with OWUI.
+  * copy this API key in the [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter)'s `.env` file so that the adapter che authenticate with OWUI (this operation must be done on first OWUI start only).
+* Stop Open WebUI container.
 * Start [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter).
+* Start Open WebUI container.
+* Log in to OWUI and create a function TBD https://docs.openwebui.com/features/extensibility/plugin/.
 * In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
 
 ## Basic features
