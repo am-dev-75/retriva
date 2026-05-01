@@ -238,7 +238,7 @@ For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
 * Stop Open WebUI container.
 * Start [Open WebUI/Retriva adapter](https://github.com/am-dev-75/open-webui_retriva-adapter).
 * Start Open WebUI container.
-* Log in to OWUI and create a function TBD https://docs.openwebui.com/features/extensibility/plugin/.
+* Log in to OWUI and create a [function](https://docs.openwebui.com/features/extensibility/plugin/) by copying [this code](https://github.com/am-dev-75/open-webui_retriva-adapter/blob/main/adapter/scripts/retriva_push_based_synchronization.py). Change the Open WebUI's Adapter URL according to your deployment. This function must either enabled for the model "Retriva" or globally.
 * In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
 
 ## Basic features
