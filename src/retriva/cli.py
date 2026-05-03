@@ -34,8 +34,17 @@ logger = get_logger(__name__)
 # in discover.py's FILE_TYPE_REGISTRY.
 # ---------------------------------------------------------------------------
 
-def ingest_html_file(path: str, api_url: str) -> None:
-    """Read an HTML file, extract title, and POST it to the ingestion API."""
+def ingest_html_file(path: str, api_url: str, api_version: str = "v2") -> None:
+    """Read an HTML file and POST it to the ingestion API."""
+    if api_version == "v2":
+        payload = {"source_uri": str(Path(path).resolve()), "content_type": "text/html"}
+        try:
+            r = requests.post(f"{api_url}/api/v2/documents", json=payload)
+            r.raise_for_status()
+        except Exception as e:
+            logger.error(f"Error uploading HTML via v2 {path}: {e}")
+        return
+
     try:
         with open(path, "r", encoding="utf-8") as f:
             html = f.read()
@@ -60,8 +69,11 @@ def ingest_html_file(path: str, api_url: str) -> None:
         logger.error(f"Error uploading HTML {path}: {e}")
 
 
-def ingest_image_file(path: str, api_url: str) -> None:
+def ingest_image_file(path: str, api_url: str, api_version: str = "v2") -> None:
     """POST a standalone image file to the ingestion API for VLM processing."""
+    if api_version == "v2":
+        logger.warning(f"Images are not natively supported by v2 yet. Falling back to v1 for {path}")
+
     payload = {
         "source_path": path,
         "page_title": Path(path).stem,
@@ -75,8 +87,17 @@ def ingest_image_file(path: str, api_url: str) -> None:
         logger.error(f"Error uploading image {path}: {e}")
 
 
-def ingest_text_file(path: str, api_url: str) -> None:
+def ingest_text_file(path: str, api_url: str, api_version: str = "v2") -> None:
     """Read a plain-text file and POST it to the ingestion API."""
+    if api_version == "v2":
+        payload = {"source_uri": str(Path(path).resolve()), "content_type": "text/plain"}
+        try:
+            r = requests.post(f"{api_url}/api/v2/documents", json=payload)
+            r.raise_for_status()
+        except Exception as e:
+            logger.error(f"Error uploading text via v2 {path}: {e}")
+        return
+
     try:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -97,11 +118,21 @@ def ingest_text_file(path: str, api_url: str) -> None:
         logger.error(f"Error uploading text {path}: {e}")
 
 
+def ingest_pdf_file(path: str, api_url: str, api_version: str = "v2") -> None:
+    """Wrapper to integrate PDF ingestion into the generic discovery flow."""
+    run_pdf_ingest(Path(path), api_url, limit=0, api_version=api_version)
+
+def ingest_markdown_file(path: str, api_url: str, api_version: str = "v2") -> None:
+    """Wrapper to integrate Markdown ingestion into the generic discovery flow."""
+    run_markdown_ingest(Path(path), api_url, limit=0, api_version=api_version)
+
 # Maps file type keys (from FILE_TYPE_REGISTRY) to handler functions.
-INGEST_HANDLERS: Dict[str, Callable[[str, str], None]] = {
+INGEST_HANDLERS: Dict[str, Callable[[str, str, str], None]] = {
     "html": ingest_html_file,
     "image": ingest_image_file,
     "text": ingest_text_file,
+    "pdf": ingest_pdf_file,
+    "markdown": ingest_markdown_file,
 }
 
 
@@ -114,6 +145,7 @@ def run_ingest(
     api_url: str,
     limit: int = 0,
     exclude: Set[str] | None = None,
+    api_version: str = "v2",
 ) -> None:
     """
     Discover and ingest all supported files under *target*.
@@ -148,7 +180,7 @@ def run_ingest(
                 logger.info(f"Reached limit ({limit}). Stopping.")
                 return
             logger.info(f"[{file_type}] Uploading {path}...")
-            handler(path, api_url)
+            handler(path, api_url, api_version)
             total += 1
 
     logger.info(f"Ingestion complete — {total} file(s) processed.")
@@ -163,6 +195,7 @@ def run_mediawiki_ingest(
     api_url: str,
     limit: int = 0,
     namespaces: Set[int] | None = None,
+    api_version: str = "v2",
 ) -> None:
     """
     Discover and ingest MediaWiki XML export files under *target*.
@@ -282,6 +315,7 @@ def run_pdf_ingest(
     target: Path,
     api_url: str,
     limit: int = 0,
+    api_version: str = "v2",
 ) -> None:
     """
     Discover and ingest PDF files under *target*.
@@ -312,6 +346,21 @@ def run_pdf_ingest(
     # --- 2. Parse and ingest ---
     total = 0
     for pdf_path in pdf_files:
+        if 0 < limit <= total:
+            logger.info(f"Reached limit ({limit}). Stopping.")
+            return
+
+        if api_version == "v2":
+            payload = {"source_uri": str(pdf_path.resolve()), "content_type": "application/pdf"}
+            try:
+                r = requests.post(f"{api_url}/api/v2/documents", json=payload)
+                r.raise_for_status()
+                total += 1
+                logger.info(f"[pdf] Uploaded '{pdf_path.stem}' via v2")
+            except Exception as e:
+                logger.error(f"Error uploading '{pdf_path.stem}' via v2: {e}")
+            continue
+
         logger.info(f"Parsing {pdf_path}...")
         doc = parse_pdf(pdf_path)
         if doc is None:
@@ -354,7 +403,7 @@ def run_pdf_ingest(
                     f"of '{doc.title}': {e}"
                 )
 
-    logger.info(f"PDF ingestion complete — {total} page(s) processed.")
+    logger.info(f"PDF ingestion complete — {total} page(s)/doc(s) processed.")
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +414,7 @@ def run_markdown_ingest(
     target: Path,
     api_url: str,
     limit: int = 0,
+    api_version: str = "v2",
 ) -> None:
     """
     Discover and ingest Markdown files under *target*.
@@ -400,6 +450,17 @@ def run_markdown_ingest(
         if 0 < limit <= total:
             logger.info(f"Reached limit ({limit}). Stopping.")
             return
+
+        if api_version == "v2":
+            payload = {"source_uri": str(md_path.resolve()), "content_type": "text/markdown"}
+            try:
+                r = requests.post(f"{api_url}/api/v2/documents", json=payload)
+                r.raise_for_status()
+                total += 1
+                logger.info(f"[markdown] Uploaded '{md_path.stem}' via v2")
+            except Exception as e:
+                logger.error(f"Error uploading '{md_path.stem}' via v2: {e}")
+            continue
 
         logger.info(f"Parsing {md_path}...")
         doc = parse_markdown(md_path)
@@ -447,6 +508,10 @@ def main():
         "--api-url", type=str, default="http://127.0.0.1:8000", help="API URL"
     )
     ingest_parser.add_argument(
+        "--api-version", type=str, default="v2", choices=["v1", "v2"],
+        help="API version to use for ingestion (default: v2)"
+    )
+    ingest_parser.add_argument(
         "--limit", type=int, default=0, help="Limit number of files"
     )
     ingest_parser.add_argument(
@@ -477,6 +542,10 @@ def main():
     )
     reindex_parser.add_argument(
         "--api-url", type=str, default="http://127.0.0.1:8000", help="API URL"
+    )
+    reindex_parser.add_argument(
+        "--api-version", type=str, default="v2", choices=["v1", "v2"],
+        help="API version to use for ingestion (default: v2)"
     )
     reindex_parser.add_argument(
         "--limit", type=int, default=0, help="Limit number of files"
@@ -521,19 +590,21 @@ def main():
             parser.error(f"Invalid --namespaces value: '{args.namespaces}'. Use comma-separated integers.")
 
     injector = getattr(args, 'injector', None)
+    if injector and args.api_version == "v2":
+        parser.error("The --injector option is only supported when --api-version is v1. V2 handles all supported file types natively.")
 
     if args.command == "ingest":
         if not target.exists():
             logger.error(f"Path '{target}' does not exist.")
             return
         if injector == "mediawiki_export":
-            run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
+            run_mediawiki_ingest(target, args.api_url, args.limit, ns_set, args.api_version)
         elif injector == "pdf":
-            run_pdf_ingest(target, args.api_url, args.limit)
+            run_pdf_ingest(target, args.api_url, args.limit, args.api_version)
         elif injector == "markdown":
-            run_markdown_ingest(target, args.api_url, args.limit)
+            run_markdown_ingest(target, args.api_url, args.limit, args.api_version)
         else:
-            run_ingest(target, args.api_url, args.limit, exclude or None)
+            run_ingest(target, args.api_url, args.limit, exclude or None, args.api_version)
 
     elif args.command == "reindex":
         if not target.is_dir():
@@ -547,13 +618,13 @@ def main():
             logger.error(f"Failed to clear collection: {e}")
             return
         if injector == "mediawiki_export":
-            run_mediawiki_ingest(target, args.api_url, args.limit, ns_set)
+            run_mediawiki_ingest(target, args.api_url, args.limit, ns_set, args.api_version)
         elif injector == "pdf":
-            run_pdf_ingest(target, args.api_url, args.limit)
+            run_pdf_ingest(target, args.api_url, args.limit, args.api_version)
         elif injector == "markdown":
-            run_markdown_ingest(target, args.api_url, args.limit)
+            run_markdown_ingest(target, args.api_url, args.limit, args.api_version)
         else:
-            run_ingest(target, args.api_url, args.limit, exclude or None)
+            run_ingest(target, args.api_url, args.limit, exclude or None, args.api_version)
 
 
 if __name__ == "__main__":
