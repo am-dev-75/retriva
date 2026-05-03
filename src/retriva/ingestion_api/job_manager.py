@@ -70,6 +70,8 @@ class Job:
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     error: Optional[str] = None
     cancel_requested: bool = False
+    current_stage: Optional[str] = None
+    stages_completed: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +82,8 @@ class Job:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "error": self.error,
+            "current_stage": self.current_stage,
+            "stages_completed": list(self.stages_completed),
         }
 
 
@@ -172,6 +176,23 @@ class JobManager:
                 job.status = JobStatus.CANCELLED
                 job.updated_at = datetime.now(timezone.utc)
                 logger.info(f"Job {job_id} → cancelled")
+
+    # -- Stage tracking (v2) -----------------------------------------------
+
+    def advance_stage(self, job_id: str, stage: str) -> None:
+        """Record a pipeline stage transition (v2 jobs only).
+
+        Moves the previous ``current_stage`` into ``stages_completed``
+        and sets the new stage.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status == JobStatus.RUNNING:
+                if job.current_stage and job.current_stage not in job.stages_completed:
+                    job.stages_completed.append(job.current_stage)
+                job.current_stage = stage
+                job.updated_at = datetime.now(timezone.utc)
+                logger.debug(f"Job {job_id} stage → {stage}")
 
     # -- Queries -----------------------------------------------------------
 

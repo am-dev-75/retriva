@@ -1,0 +1,19 @@
+openapi: 3.1.0
+info:
+  title: Retriva Core API v2 (Draft)
+  version: 2.0.0
+paths:
+  /api/v2/documents:
+    post:
+      summary: Generic multi-parser ingestion endpoint
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_uri: {type: string}
+                user_metadata: {type: object}
+      responses:
+        '202':
+          description: Job accepted
