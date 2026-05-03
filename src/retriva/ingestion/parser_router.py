@@ -228,3 +228,69 @@ class DefaultParserRouter:
 from retriva.registry import CapabilityRegistry
 
 CapabilityRegistry().register("parser_router", DefaultParserRouter, priority=100)
+
+
+class DefaultParserWrapper:
+    """Wrapper that adapts ``DefaultParserRouter`` to the v2 parser interface.
+
+    The v2 pipeline expects parsers registered under ``parser:<name>``
+    to return ``List[CanonicalRecord]``.  This wrapper converts
+    ``ParserResult`` objects from the built-in router into canonical
+    records, serving as a fallback when Docling/Unstructured are not
+    installed.
+    """
+
+    def __init__(self):
+        self._router = DefaultParserRouter()
+
+    def parse(
+        self,
+        source: str,
+        content_type: str,
+        cancel_check=None,
+    ):
+        from retriva.domain.models import CanonicalRecord
+
+        result = self._router.parse(source, content_type, cancel_check)
+        records = []
+
+        # Main text content
+        if result.content_text and result.content_text.strip():
+            records.append(CanonicalRecord(
+                document_id=source,
+                element_type="text",
+                text=result.content_text,
+                source_uri=source,
+                parser_name="default",
+            ))
+
+        # Multi-page content (PDF)
+        if result.pages:
+            for page in result.pages:
+                page_text = page.get("text", "")
+                if page_text.strip():
+                    records.append(CanonicalRecord(
+                        document_id=source,
+                        element_type="text",
+                        text=page_text,
+                        page=page.get("page_number"),
+                        source_uri=source,
+                        parser_name="default",
+                    ))
+
+        # Images
+        for img in result.images:
+            records.append(CanonicalRecord(
+                document_id=source,
+                element_type="image",
+                text=img.alt or img.caption or "",
+                image_path=img.src,
+                source_uri=source,
+                parser_name="default",
+            ))
+
+        return records
+
+
+# Register as the lowest-priority v2 parser fallback
+CapabilityRegistry().register("parser:default", DefaultParserWrapper, priority=50)

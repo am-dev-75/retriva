@@ -15,20 +15,29 @@
 """
 v2 document ingestion endpoints.
 
-Provides a generic, format-agnostic ingestion pipeline that detects
-document type and routes to the appropriate parser.  Supports both
-JSON-body requests (``source_uri``) and multipart file uploads.
+Provides a multi-tool, routing-based ingestion pipeline:
+
+    DETECTING → PREPROCESSING → PARSING → NORMALIZATION → CHUNKING → INDEXING
+
+- **DETECTING**:      Tika REST — MIME detection + metadata + scanned-PDF heuristic
+- **PREPROCESSING**:   OCRmyPDF — add text layer to scanned PDFs
+- **PARSING**:         Docling (or configurable primary parser) — structural extraction
+- **NORMALIZATION**:   CanonicalRecord → ParsedDocument + VLM image enrichment
+- **CHUNKING**:        DefaultChunker — recursive text splitting
+- **INDEXING**:        Qdrant upsert — embed + store
 """
 
 import json as _json
 import os
 import shutil
 import tempfile
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
 
-from retriva.domain.models import ParsedDocument
+from retriva.config import settings
+from retriva.domain.models import CanonicalRecord, ParsedDocument
 from retriva.indexing.qdrant_store import get_client, upsert_chunks
 from retriva.ingestion.normalize import normalize_text
 from retriva.ingestion_api.job_manager import CancellationError, JobManager
@@ -41,16 +50,93 @@ from retriva.ingestion_api.schemas_v2 import (
 from retriva.logger import get_logger
 from retriva.registry import CapabilityRegistry
 
-# Import module to trigger default registrations
-import retriva.ingestion.chunker        # noqa: F401 — registers DefaultChunker
-import retriva.ingestion.parser_router  # noqa: F401 — registers DefaultParserRouter
+# Import modules to trigger default registrations
+import retriva.ingestion.chunker              # noqa: F401 — registers DefaultChunker
+import retriva.ingestion.tika_client          # noqa: F401 — registers TikaClient
+import retriva.ingestion.ocrmypdf_preprocessor  # noqa: F401 — registers OCRmyPDFPreprocessor
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v2/documents", tags=["v2-documents"])
 
 
 # ---------------------------------------------------------------------------
-# Shared background worker
+# CanonicalRecord → ParsedDocument conversion
+# ---------------------------------------------------------------------------
+
+def records_to_parsed_document(
+    records: List[CanonicalRecord],
+    source_uri: str,
+    metadata: Optional[Dict[str, str]],
+    language: str = "en",
+    page_title: str = "",
+) -> ParsedDocument:
+    """Convert a list of ``CanonicalRecord`` objects to a ``ParsedDocument``.
+
+    Groups text/heading/table records into a single content string,
+    preserving heading hierarchy as section markers.  Image records
+    are included separately for image-chunk creation.
+
+    Args:
+        records:    CanonicalRecords from the PARSING stage.
+        source_uri: Original document path/URI.
+        metadata:   User-provided metadata to propagate.
+        language:   Detected language (from Tika or parser).
+        page_title: Document title (from Tika metadata or parser).
+
+    Returns:
+        A ``ParsedDocument`` ready for the chunker.
+    """
+    from retriva.domain.models import ImageContext
+
+    text_parts: List[str] = []
+    images: list = []
+
+    for record in records:
+        if record.element_type == "image":
+            # Image records are handled as ImageContext for the chunker
+            images.append(ImageContext(
+                src=record.image_path or record.source_uri,
+                alt="",
+                caption="",
+                surrounding_text=record.text[:200] if record.text else "",
+                vlm_description=record.text if record.text else "",
+            ))
+        elif record.element_type == "heading":
+            # Preserve headings as markdown-style markers
+            level = len(record.heading_path) + 1
+            prefix = "#" * min(level, 4)
+            text_parts.append(f"{prefix} {record.text}")
+        elif record.element_type == "table":
+            # Use markdown table if available, otherwise raw text
+            table_text = record.table_markdown or record.text
+            text_parts.append(table_text)
+        else:
+            text_parts.append(record.text)
+
+    full_text = "\n\n".join(text_parts)
+
+    # Derive title: use explicit page_title, or first heading, or filename
+    if not page_title:
+        for r in records:
+            if r.element_type == "heading" and r.text.strip():
+                page_title = r.text.strip()
+                break
+        if not page_title:
+            page_title = Path(source_uri).stem.replace("_", " ").replace("-", " ").title()
+
+    return ParsedDocument(
+        source_path=source_uri,
+        canonical_doc_id=source_uri,
+        page_title=page_title,
+        content_text=full_text,
+        language=language,
+        images=images,
+        user_metadata=metadata,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared background worker — multi-tool pipeline
 # ---------------------------------------------------------------------------
 
 def process_document_v2(
@@ -68,50 +154,171 @@ def process_document_v2(
     manager = JobManager()
     manager.start_job(job_id)
     cancel_check = lambda: manager.is_cancel_requested(job_id)
+    parse_source = temp_path or source_uri
+    ocr_temp_path = None  # Track OCR output for cleanup
 
     try:
         registry = CapabilityRegistry()
 
-        # ── Stage 1: DETECTING ───────────────────────────────────────────
+        # ── Stage 1: DETECTING ───────────────────────────────────────
         manager.advance_stage(job_id, JobStage.DETECTING.value)
-        parser_router = registry.get_instance("parser_router")
-        detected_type = parser_router.detect_content_type(source_uri, hint=content_type)
-        logger.debug(f"Job {job_id}: detected type = {detected_type}")
 
-        # ── Stage 2: PREPROCESSING ───────────────────────────────────────
-        manager.advance_stage(job_id, JobStage.PREPROCESSING.value)
-        parse_source = temp_path or source_uri
+        tika = registry.get_instance("tika_client")
+        if tika.health_check():
+            detection = tika.detect(parse_source)
+            logger.debug(
+                f"Job {job_id}: Tika detected type={detection.content_type}, "
+                f"scanned={detection.is_scanned}"
+            )
+        else:
+            # Tika unavailable — fall back to extension-based detection
+            from retriva.ingestion.parser_router import DefaultParserRouter
+            fallback_router = DefaultParserRouter()
+            detected_mime = fallback_router.detect_content_type(
+                source_uri, hint=content_type
+            )
+            from retriva.ingestion.tika_client import TikaDetectionResult
+            detection = TikaDetectionResult(content_type=detected_mime)
+            logger.warning(
+                f"Job {job_id}: Tika unavailable, using extension-based detection: "
+                f"{detected_mime}"
+            )
+
+        # Override with explicit content_type hint if provided
+        if content_type:
+            detection.content_type = content_type
+
         # Validate source exists for local paths
         if not temp_path and not os.path.exists(parse_source):
             raise FileNotFoundError(f"Source not found: {parse_source}")
 
         if cancel_check():
+            raise CancellationError("Job cancelled during detection")
+
+        # ── Stage 2: PREPROCESSING ───────────────────────────────────
+        manager.advance_stage(job_id, JobStage.PREPROCESSING.value)
+
+        preprocessor = registry.get_instance("ocrmypdf_preprocessor")
+        if preprocessor.needs_ocr(detection):
+            ocr_fd, ocr_temp_path = tempfile.mkstemp(suffix=".pdf")
+            os.close(ocr_fd)
+            success = preprocessor.preprocess(
+                parse_source, ocr_temp_path, cancel_check
+            )
+            if success:
+                parse_source = ocr_temp_path
+                logger.info(f"Job {job_id}: using OCR'd PDF for parsing")
+            else:
+                logger.warning(
+                    f"Job {job_id}: OCR preprocessing failed, "
+                    f"continuing with original"
+                )
+
+        if cancel_check():
             raise CancellationError("Job cancelled during preprocessing")
 
-        # ── Stage 3: PARSING ─────────────────────────────────────────────
+        # ── Stage 3: PARSING ─────────────────────────────────────────
         manager.advance_stage(job_id, JobStage.PARSING.value)
-        result = parser_router.parse(parse_source, detected_type, cancel_check)
+
+        parser_key = f"parser:{parser_hint}" if parser_hint else f"parser:{settings.v2_primary_parser}"
+        try:
+            parser = registry.get_instance(parser_key)
+        except KeyError:
+            if parser_hint:
+                logger.warning(
+                    f"Job {job_id}: unknown parser_hint '{parser_hint}', "
+                    f"falling back to '{settings.v2_primary_parser}'"
+                )
+                try:
+                    parser = registry.get_instance(
+                        f"parser:{settings.v2_primary_parser}"
+                    )
+                except KeyError:
+                    logger.warning(
+                        f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
+                        f"not available, using built-in default"
+                    )
+                    parser = registry.get_instance("parser:default")
+            else:
+                logger.warning(
+                    f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
+                    f"not available, using built-in default"
+                )
+                parser = registry.get_instance("parser:default")
+
+        records: List[CanonicalRecord] = parser.parse(
+            parse_source, detection.content_type, cancel_check
+        )
 
         if cancel_check():
             raise CancellationError("Job cancelled after parsing")
 
-        # ── Stage 4: NORMALIZATION ───────────────────────────────────────
+        logger.info(
+            f"Job {job_id}: parser '{parser_key}' produced {len(records)} records"
+        )
+
+        # ── Stage 4: NORMALIZATION ───────────────────────────────────
         manager.advance_stage(job_id, JobStage.NORMALIZATION.value)
 
-        # Multi-page documents (PDF): process per-page for citation granularity
-        if result.pages:
-            _process_multipage(
-                result, source_uri, user_metadata, job_id,
-                manager, cancel_check, registry,
+        # 4a. VLM enrichment for image records
+        try:
+            vlm = registry.get_instance("vlm_describer")
+            for record in records:
+                if cancel_check():
+                    raise CancellationError("Cancelled during VLM enrichment")
+                if record.element_type == "image" and record.image_path:
+                    image_file = Path(record.image_path)
+                    if image_file.is_file():
+                        description = vlm.describe(image_file)
+                        if description:
+                            record.text = description
+                            record.confidence = 1.0
+                            logger.debug(f"VLM enriched image: {image_file.name}")
+        except KeyError:
+            logger.debug("No vlm_describer registered — skipping VLM enrichment")
+
+        # 4b. Derive title from Tika metadata or parser output
+        page_title = (
+            detection.metadata.get("dc:title", "")
+            or detection.metadata.get("title", "")
+        )
+
+        # 4c. Convert CanonicalRecords → ParsedDocument
+        language = detection.language or "en"
+        normalized = records_to_parsed_document(
+            records, source_uri, user_metadata, language, page_title
+        )
+
+        # 4d. Normalize text content
+        normalized.content_text = normalize_text(normalized.content_text)
+
+        if not normalized.content_text.strip():
+            logger.warning(
+                f"Job {job_id}: empty content after normalization — skipping."
             )
-        else:
-            _process_singlepage(
-                result, source_uri, user_metadata, job_id,
-                manager, cancel_check, registry,
-            )
+            manager.complete_job(job_id)
+            return
+
+        if cancel_check():
+            raise CancellationError("Job cancelled during normalization")
+
+        # ── Stage 5: CHUNKING ────────────────────────────────────────
+        manager.advance_stage(job_id, JobStage.CHUNKING.value)
+        chunks = registry.get_instance("chunker").create_chunks(normalized)
+
+        if cancel_check():
+            raise CancellationError("Job cancelled during chunking")
+
+        # ── Stage 6: INDEXING ────────────────────────────────────────
+        manager.advance_stage(job_id, JobStage.INDEXING.value)
+        client = get_client()
+        upsert_chunks(client, chunks, cancel_check=cancel_check)
 
         manager.complete_job(job_id)
-        logger.info(f"Job {job_id} completed for '{source_uri}'")
+        logger.info(
+            f"Job {job_id} completed for '{source_uri}' "
+            f"({len(chunks)} chunks indexed)"
+        )
 
     except CancellationError:
         manager.mark_cancelled(job_id)
@@ -120,89 +327,11 @@ def process_document_v2(
         manager.fail_job(job_id, str(e))
         logger.error(f"Job {job_id} failed: {e}")
     finally:
+        # Clean up all temp files
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
-
-
-def _process_singlepage(
-    result, source_uri, user_metadata, job_id,
-    manager, cancel_check, registry,
-):
-    """Handle single-content documents (text, HTML, Markdown)."""
-    normalized_text = normalize_text(result.content_text)
-
-    if not normalized_text.strip():
-        logger.warning(f"Job {job_id}: empty content after normalization — skipping.")
-        return
-
-    # ── Stage 5: CHUNKING ────────────────────────────────────────────
-    manager.advance_stage(job_id, JobStage.CHUNKING.value)
-    doc = ParsedDocument(
-        source_path=source_uri,
-        canonical_doc_id=source_uri,
-        page_title=result.page_title,
-        content_text=normalized_text,
-        language=result.language,
-        images=result.images,
-        user_metadata=user_metadata,
-    )
-    chunks = registry.get_instance("chunker").create_chunks(doc)
-
-    if cancel_check():
-        raise CancellationError("Job cancelled during chunking")
-
-    # ── Stage 6: INDEXING ────────────────────────────────────────────
-    manager.advance_stage(job_id, JobStage.INDEXING.value)
-    client = get_client()
-    upsert_chunks(client, chunks, cancel_check=cancel_check)
-
-
-def _process_multipage(
-    result, source_uri, user_metadata, job_id,
-    manager, cancel_check, registry,
-):
-    """Handle multi-page documents (PDF) with per-page citation granularity."""
-    chunker = registry.get_instance("chunker")
-    all_chunks = []
-
-    for page in result.pages:
-        if cancel_check():
-            raise CancellationError("Job cancelled during multipage normalization")
-
-        page_text = normalize_text(page["text"])
-        if not page_text.strip():
-            continue
-
-        doc_id = f"{source_uri}#p{page['page_number']}"
-        parsed_doc = ParsedDocument(
-            source_path=source_uri,
-            canonical_doc_id=doc_id,
-            page_title=result.page_title,
-            content_text=page_text,
-            images=[],
-            user_metadata=user_metadata,
-        )
-
-        page_chunks = chunker.create_chunks(parsed_doc)
-        for chunk in page_chunks:
-            chunk.metadata.section_path = f"Page {page['page_number']}"
-
-        all_chunks.extend(page_chunks)
-
-    if not all_chunks:
-        logger.warning(f"Job {job_id}: no chunks produced after normalization — skipping.")
-        return
-
-    # ── Stage 5: CHUNKING ────────────────────────────────────────────
-    manager.advance_stage(job_id, JobStage.CHUNKING.value)
-
-    if cancel_check():
-        raise CancellationError("Job cancelled during chunking")
-
-    # ── Stage 6: INDEXING ────────────────────────────────────────────
-    manager.advance_stage(job_id, JobStage.INDEXING.value)
-    client = get_client()
-    upsert_chunks(client, all_chunks, cancel_check=cancel_check)
+        if ocr_temp_path and os.path.exists(ocr_temp_path):
+            os.remove(ocr_temp_path)
 
 
 # ---------------------------------------------------------------------------

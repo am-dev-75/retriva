@@ -31,9 +31,11 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 
 # Ensure default implementations are registered
-import retriva.ingestion.chunker        # noqa: F401
-import retriva.ingestion.html_parser    # noqa: F401
-import retriva.ingestion.parser_router  # noqa: F401
+import retriva.ingestion.chunker              # noqa: F401
+import retriva.ingestion.html_parser          # noqa: F401
+import retriva.ingestion.parser_router        # noqa: F401
+import retriva.ingestion.tika_client          # noqa: F401
+import retriva.ingestion.ocrmypdf_preprocessor  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +52,13 @@ def ensure_registrations():
     importlib.reload(retriva.ingestion.chunker)
     importlib.reload(retriva.ingestion.html_parser)
     importlib.reload(retriva.ingestion.parser_router)
-    yield
+    importlib.reload(retriva.ingestion.tika_client)
+    importlib.reload(retriva.ingestion.ocrmypdf_preprocessor)
+
+    # Mock Tika health_check — no running Tika server required
+    with patch("retriva.ingestion.tika_client.TikaClient.health_check", return_value=False):
+        yield
+
     from retriva.ingestion_api.job_manager import JobManager
     JobManager._reset()
 

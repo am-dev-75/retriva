@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     # Extension discovery (comma-separated dotted module paths)
     retriva_extensions: str = ""
 
+    # v2 Ingestion Pipeline
+    tika_server_url: str = "http://localhost:9998"
+    ocrmypdf_enabled: bool = True
+    ocrmypdf_language: str = "eng+ita"
+    ocrmypdf_deskew: bool = True
+    ocrmypdf_rotate_pages: bool = True
+    v2_primary_parser: str = "docling"
+
     # OpenAI-compatible API (for Open WebUI)
     openai_api_port: int = 8001
 

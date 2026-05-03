@@ -32,9 +32,11 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
 # Ensure default implementations are registered before app is imported
-import retriva.ingestion.chunker        # noqa: F401
-import retriva.ingestion.html_parser    # noqa: F401
-import retriva.ingestion.parser_router  # noqa: F401
+import retriva.ingestion.chunker              # noqa: F401
+import retriva.ingestion.html_parser          # noqa: F401
+import retriva.ingestion.parser_router        # noqa: F401
+import retriva.ingestion.tika_client          # noqa: F401
+import retriva.ingestion.ocrmypdf_preprocessor  # noqa: F401
 
 
 # Mock Qdrant connection during app startup lifespan
@@ -55,13 +57,22 @@ def reset_job_manager():
 
     Other test modules (test_registry, test_extension_loading) may call
     ``CapabilityRegistry._reset()``, clearing all registrations.  We
-    re-register the defaults here so v2 tests always find ``parser_router``.
+    re-register the defaults here so v2 tests always find all capabilities.
+    Also mocks TikaClient.health_check to return False so tests use the
+    extension-based fallback (no Tika server needed).
     """
     import importlib
     importlib.reload(retriva.ingestion.chunker)
     importlib.reload(retriva.ingestion.html_parser)
     importlib.reload(retriva.ingestion.parser_router)
-    yield
+    importlib.reload(retriva.ingestion.tika_client)
+    importlib.reload(retriva.ingestion.ocrmypdf_preprocessor)
+
+    # Mock Tika health_check so the v2 pipeline falls back to extension-based
+    # MIME detection — no running Tika server required for unit tests
+    with patch("retriva.ingestion.tika_client.TikaClient.health_check", return_value=False):
+        yield
+
     JobManager._reset()
 
 
