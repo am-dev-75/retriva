@@ -14,9 +14,10 @@
     - [End-to-End Flow Summary](#end-to-end-flow-summary)
       - [Upload-only flow](#upload-only-flow)
       - [Question flow](#question-flow)
-  - [Basic features](#basic-features)
-  - [Advanced features](#advanced-features)
-    - [Data Sovereignty](#data-sovereignty)
+    - [Features and design principles](#features-and-design-principles)
+      - [Basic](#basic)
+      - [Advanced features](#advanced-features)
+      - [Data Sovereignty](#data-sovereignty)
   - [Implementation](#implementation)
     - [Software architecture](#software-architecture)
     - [API](#api)
@@ -145,17 +146,16 @@ Retriva → LLM
 ```
 At no point do uploads implicitly cause LLM calls.
 
-## Basic features
+### Features and design principles
+#### Basic
 
 See [this page](docs/basic_features.md).
 
-## Advanced features
+#### Advanced features
 
 See [this page](docs/advanced_features.md).
 
-
-
-### Data Sovereignty
+#### Data Sovereignty
 
 From the very beginning, Retriva was designed with data sovereignty in mind—that is, ensuring that parties other than the owner of the data entered into the knowledge base could not access it. Currently, there are several solutions to address this requirement, each with its own pros and cons. This [section](docs/data_sovereignty.md) provides an overview of these options. Given Retriva’s modular nature, it can be deployed in various ways, including hybrid configurations that combine the options listed in the linked page.
 

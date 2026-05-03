@@ -1,0 +1,607 @@
+openapi: 3.1.0
+info:
+  title: Retriva API
+  description: |
+    Retriva provides a comprehensive set of APIs for document ingestion, retrieval, and integration with Open WebUI.
+    
+    The system consists of three main components:
+    * **Retriva Core (Ingestion)**: Handles data processing, chunking, and indexing.
+    * **Retriva Core (OpenAI API)**: Provides OpenAI-compatible endpoints for RAG.
+    * **Open WebUI Adapter**: Orchestrates synchronization and intent classification.
+  version: 1.0.0
+  contact:
+    name: Andrea Marson
+    email: am.dev.75@gmail.com
+license:
+  name: Apache 2.0
+  url: http://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8001
+    description: Retriva Core (Ingestion API)
+  - url: http://localhost:8000
+    description: Retriva Core (OpenAI Chat API)
+  - url: http://localhost:8002
+    description: Open WebUI Adapter
+
+tags:
+  - name: Ingestion
+    description: Document and data processing pipeline
+  - name: Chat
+    description: OpenAI-compatible retrieval and completion
+  - name: Adapter
+    description: Integration and synchronization with Open WebUI
+  - name: Jobs
+    description: Ingestion job management
+  - name: Internal
+    description: Debugging and observability endpoints
+
+paths:
+  # --- Ingestion API ---
+  /api/v1/ingest/text:
+    post:
+      tags: [Ingestion]
+      summary: Ingest plain text
+      operationId: ingestText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/HTML:
+    post:
+      tags: [Ingestion]
+      summary: Ingest HTML content
+      operationId: ingestHtml
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HtmlIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/pdf:
+    post:
+      tags: [Ingestion]
+      summary: Ingest PDF page
+      operationId: ingestPdf
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PdfIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/markdown:
+    post:
+      tags: [Ingestion]
+      summary: Ingest Markdown sections
+      operationId: ingestMarkdown
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkdownIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/image:
+    post:
+      tags: [Ingestion]
+      summary: Ingest local image file
+      operationId: ingestImage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/mediawiki:
+    post:
+      tags: [Ingestion]
+      summary: Ingest MediaWiki export page
+      operationId: ingestMediaWiki
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaWikiIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/chunks:
+    post:
+      tags: [Ingestion]
+      summary: Ingest raw chunks
+      operationId: ingestChunks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChunkIngestRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/ingest/collection:
+    delete:
+      tags: [Ingestion]
+      summary: Clear entire vector collection
+      operationId: clearCollection
+      responses:
+        '200':
+          description: Collection cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  /api/v1/documents/{doc_id}:
+    delete:
+      tags: [Ingestion]
+      summary: Delete a document and its chunks
+      operationId: deleteDocument
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Document deleted or not found (idempotent)
+
+  # --- Jobs API ---
+  /api/v1/jobs:
+    get:
+      tags: [Jobs]
+      summary: List recent ingestion jobs
+      operationId: listJobs
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobResponse'
+
+  /api/v1/jobs/{job_id}:
+    get:
+      tags: [Jobs]
+      summary: Get job status
+      operationId: getJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+
+  /api/v1/jobs/{job_id}/cancel:
+    post:
+      tags: [Jobs]
+      summary: Request job cancellation
+      operationId: cancelJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+
+  # --- OpenAI Chat API ---
+  /v1/models:
+    get:
+      tags: [Chat]
+      summary: List available models
+      operationId: listModels
+      responses:
+        '200':
+          description: OpenAI-compatible model list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListModelsResponse'
+
+  /v1/chat/completions:
+    post:
+      tags: [Chat]
+      summary: Chat completion with RAG
+      operationId: chatCompletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: Chat completion result (or stream if requested)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ChatCompletionResponse'
+                  - type: string
+                    format: binary
+                    description: Server-Sent Events stream
+
+  # --- Adapter API ---
+  /healthz:
+    get:
+      tags: [Adapter]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+  
+  /readyz:
+    get:
+      tags: [Adapter]
+      summary: Readiness probe
+      responses:
+        '200':
+          description: System ready
+        '503':
+          description: Service unavailable
+
+  /api/v1/sync:
+    post:
+      tags: [Adapter]
+      summary: Trigger manual synchronization cycle
+      responses:
+        '200':
+          description: Sync results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+
+  /api/v1/mappings:
+    get:
+      tags: [Adapter]
+      summary: List file mappings
+      responses:
+        '200':
+          description: List of mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MappingRecord'
+
+  /api/v1/chat/message:
+    post:
+      tags: [Adapter]
+      summary: Receive chat message webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessagePayload'
+      responses:
+        '200':
+          description: Processing status
+
+  /api/v1/events:
+    post:
+      tags: [Adapter]
+      summary: Receive system events webhook
+      responses:
+        '200':
+          description: Event processed
+
+  /metrics:
+    get:
+      tags: [Adapter]
+      summary: Prometheus metrics
+      responses:
+        '200':
+          description: Plaintext metrics
+
+  # --- Internal / Debug API ---
+  /internal/ingestion-tagging/{chat_id}:
+    get:
+      tags: [Internal]
+      summary: Inspect ingestion context for a chat
+      parameters:
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Context state
+
+  /internal/mappings/documents:
+    get:
+      tags: [Internal]
+      summary: List all document mappings (internal)
+      responses:
+        '200':
+          description: List of records
+
+  /internal/mappings/documents/{owui_file_id}:
+    get:
+      tags: [Internal]
+      summary: Get mapping for a specific file
+      parameters:
+        - name: owui_file_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mapping record
+
+  /internal/mappings/knowledge-bases:
+    get:
+      tags: [Internal]
+      summary: List knowledge base mappings
+      responses:
+        '200':
+          description: List of KB mappings
+
+components:
+  schemas:
+    # --- Ingestion Schemas ---
+    TextIngestRequest:
+      type: object
+      required: [source_path, content_text]
+      properties:
+        source_path: {type: string}
+        page_title: {type: string}
+        content_text: {type: string}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    HtmlIngestRequest:
+      type: object
+      required: [source_path, html_content]
+      properties:
+        source_path: {type: string}
+        page_title: {type: string}
+        html_content: {type: string}
+        origin_file_path: {type: string}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    PdfIngestRequest:
+      type: object
+      required: [source_path, content_text, page_number]
+      properties:
+        source_path: {type: string}
+        page_title: {type: string}
+        content_text: {type: string}
+        page_number: {type: integer}
+        total_pages: {type: integer}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    MarkdownSection:
+      type: object
+      required: [content]
+      properties:
+        heading: {type: string}
+        content: {type: string}
+
+    MarkdownIngestRequest:
+      type: object
+      required: [source_path, page_title, sections]
+      properties:
+        source_path: {type: string}
+        page_title: {type: string}
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarkdownSection'
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    ImageIngestRequest:
+      type: object
+      required: [source_path, file_path]
+      properties:
+        source_path: {type: string}
+        page_title: {type: string}
+        file_path: {type: string}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    MediaWikiIngestRequest:
+      type: object
+      required: [source_path, page_title, content_text]
+      properties:
+        source_path: {type: string}
+        page_title: {type: string}
+        content_text: {type: string}
+        page_id: {type: integer}
+        namespace: {type: integer}
+        linked_assets:
+          type: array
+          items: {type: string}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    ChunkIngestRequest:
+      type: object
+      required: [chunks]
+      properties:
+        chunks:
+          type: array
+          items: {type: object} # Simplification for Chunk
+
+    IngestResponse:
+      type: object
+      required: [status, message]
+      properties:
+        status: {type: string}
+        message: {type: string}
+        job_id: {type: string}
+
+    JobResponse:
+      type: object
+      required: [job_id, status, source, job_type, created_at, updated_at]
+      properties:
+        job_id: {type: string}
+        status: {type: string}
+        source: {type: string}
+        job_type: {type: string}
+        created_at: {type: string}
+        updated_at: {type: string}
+        error: {type: string}
+
+    # --- OpenAI Schemas ---
+    ListModelsResponse:
+      type: object
+      properties:
+        object: {type: string}
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              object: {type: string}
+              created: {type: integer}
+              owned_by: {type: string}
+
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model: {type: string}
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        stream: {type: boolean}
+        temperature: {type: number}
+        top_p: {type: number}
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: {type: string, enum: [system, user, assistant]}
+        content: {type: string}
+        metadata: {type: object}
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id: {type: string}
+        object: {type: string}
+        created: {type: integer}
+        model: {type: string}
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index: {type: integer}
+              message:
+                $ref: '#/components/schemas/ChatMessage'
+              finish_reason: {type: string}
+        usage:
+          type: object
+          properties:
+            prompt_tokens: {type: integer}
+            completion_tokens: {type: integer}
+            total_tokens: {type: integer}
+        sources:
+          type: array
+          items: {type: object}
+
+    # --- Adapter Schemas ---
+    SyncResult:
+      type: object
+      properties:
+        ingested: {type: integer}
+        deleted: {type: integer}
+        failed: {type: integer}
+        retried: {type: integer}
+        skipped: {type: integer}
+        errors: {type: array, items: {type: string}}
+
+    MappingRecord:
+      type: object
+      properties:
+        owui_file_id: {type: string}
+        filename: {type: string}
+        retriva_doc_id: {type: string}
+        content_hash: {type: string}
+        status: {type: string}
+        created_at: {type: string}
+        updated_at: {type: string}
+
+    ChatMessagePayload:
+      type: object
+      required: [chat_id, message]
+      properties:
+        chat_id: {type: string}
+        message: {type: string}
+        kb_ids: {type: array, items: {type: string}}
+        file_ids: {type: array, items: {type: string}}
