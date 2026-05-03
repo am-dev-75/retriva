@@ -34,14 +34,14 @@ class Settings(BaseSettings):
 
     # Visual model
     visual_base_url: str = "https://openrouter.ai/api/v1"
-    visual_model: str = "google/gemini-2.0-flash-001"
+    visual_model: str = "qwen/qwen3-vl-32b-instruct"
     visual_openai_api_key: Optional[str] = None
     visual_max_tokens: int = 2048
     visual_temperature: float = 0.0
     
-    # LLM Settings
+    # Chat model
     chat_base_url: str = "https://openrouter.ai/api/v1"
-    chat_model: str = "qwen/qwen-2.5-coder-32b-instruct"
+    chat_model: str = "qwen/qwen3.5-27b"
     chat_openai_api_key: str = ""
     chat_temperature: float = 0.0
     chat_top_p: float = 0.9
