@@ -9,19 +9,19 @@
   - [Architecture](#architecture)
     - [Overview](#overview)
     - [Open WebUI (OWUI)](#open-webui-owui)
-    - [Thin Adapter](#thin-adapter)
-    - [Retriva Core](#retriva-core)
+      - [OWUI adapter](#owui-adapter)
+    - [Retriva core](#retriva-core)
     - [End-to-End Flow Summary](#end-to-end-flow-summary)
       - [Upload-only flow](#upload-only-flow)
       - [Question flow](#question-flow)
-    - [API](#api)
-    - [Software architecture](#software-architecture)
-    - [Data Sovereignty](#data-sovereignty)
-  - [Implementation](#implementation)
-  - [Quick Start](#quick-start)
-    - [Use in tandem with Open WebUI (optional)](#use-in-tandem-with-open-webui-optional)
   - [Basic features](#basic-features)
   - [Advanced features](#advanced-features)
+    - [Data Sovereignty](#data-sovereignty)
+  - [Implementation](#implementation)
+    - [Software architecture](#software-architecture)
+    - [API](#api)
+  - [Quick Start](#quick-start)
+    - [Use in tandem with Open WebUI (optional)](#use-in-tandem-with-open-webui-optional)
   - [Licensing](#licensing)
 
 ## Introduction
@@ -77,10 +77,11 @@ Open WebUI is responsible for:
 OWUI always communicates using OpenAI-compatible APIs, even for non-user actions such as uploads or internal planning. As a result, OWUI may emit multiple chat-completion requests for a single user action. These requests are control-plane artifacts, not direct expressions of user intent.
 OWUI remains intentionally unaware of Retriva internals.
 
-### Thin Adapter
+#### OWUI adapter
 
-Thin Adapter (Control Plane)
-The Thin Adapter sits between OWUI and Retriva and is the architectural keystone of the system.
+To interface Open WebUI with Retriva, an [adapter](https://github.com/am-dev-75/open-webui_retriva-adapter) is needed. .
+
+The adapter sits between OWUI and Retriva and is the architectural keystone of the system.
 Its responsibilities include:
 * Intent classification
   * Distinguishes human-authored questions from OWUI-generated control prompts
@@ -109,7 +110,7 @@ Crucially, the adapter:
 
 It is a pure control plane, not a model gateway.
 
-### Retriva Core
+### Retriva core
 Retriva is the data plane and system of record for:
 * Document ingestion
 * Chunking and embedding
@@ -144,14 +145,15 @@ Retriva → LLM
 ```
 At no point do uploads implicitly cause LLM calls.
 
-### API
+## Basic features
 
-- **Ingestion API (`ingestion_api/`)**: A standalone HTTP service that handles the data processing pipeline. It locally discovers filesystem-based static HTML mirrors, extracts main content, and performs section-aware text chunking.
-- **Embeddings & Vector Store (`indexing/`)**: Extracted metadata and text chunks are converted into multilingual embeddings via an OpenAI-compatible endpoint. These embeddings are batched and stored in a Qdrant vector database for fast and scalable dense retrieval.
+See [this page](docs/basic_features.md).
 
-### Software architecture
+## Advanced features
 
-![](docs/assets/Retriva_software_architecture.drawio.png)
+See [this page](docs/advanced_features.md).
+
+
 
 ### Data Sovereignty
 
@@ -160,6 +162,14 @@ From the very beginning, Retriva was designed with data sovereignty in mind—th
 ## Implementation
 
 See [this page](docs/implementation.md) for the implementation details.
+
+### Software architecture
+
+![](docs/assets/Retriva_software_architecture.drawio.png)
+
+### API
+
+See [this page](./docs/api.md) for the API documentation.
 
 ## Quick Start
 
@@ -240,14 +250,6 @@ For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
 * Start Open WebUI container.
 * Log in to OWUI and create a [function](https://docs.openwebui.com/features/extensibility/plugin/) by copying [this code](https://github.com/am-dev-75/open-webui_retriva-adapter/blob/main/adapter/scripts/retriva_push_based_synchronization.py). Change the Open WebUI's Adapter URL according to your deployment. This function must either enabled for the model "Retriva" or globally.
 * In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
-
-## Basic features
-
-See [this page](docs/basic_features.md).
-
-## Advanced features
-
-See [this page](docs/advanced_features.md).
 
 ## Licensing
 
