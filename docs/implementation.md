@@ -8,6 +8,7 @@
   - [Open WebUI Interfacing](#open-webui-interfacing)
     - [Streaming support](#streaming-support)
     - [Job cancellation support](#job-cancellation-support)
+    - [Knowledge Base Management](#knowledge-base-management)
 
 ## Retrieval
 
@@ -76,3 +77,45 @@ Key design decisions:
 * Backward-compatible — `IngestResponse.job_id` is optional; existing clients unaffected
 * No rollback — chunks upserted before cancellation stay in Qdrant
 * `CancellationError` propagates from checkpoints → caught by the background worker → sets state to cancelled
+
+### Knowledge Base Management
+
+Retriva maintains its knowledge base in a vector database. For instance, when working in tandem with Qdrant, it makes use of the `retriva_chunks` collection. 
+
+When Retriva is interfaced to Open WebUI, the OWUI adapter maintains a synchronization between OWUI's KBs and Retriva's KB. Associations between OWUI's KBs and Retriva's KB can be viewed by using debugging endpoints exposed by the adapter. For instance:
+
+```
+$ curl http://localhost:8002/internal/mappings/knowledge-bases | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   160  100   160    0     0  41862      0 --:--:-- --:--:-- --:--:-- 53333
+[
+  {
+    "owui_kb_id": "749ee4bc-2738-40bd-ab7e-79c6fff76ee3",
+    "retriva_kb_id": "749ee4bc-2738-40bd-ab7e-79c6fff76ee3",
+    "last_seen_at": "2026-05-03T09:04:12.693998+00:00"
+  }
+]
+```
+
+In practice, when a document belonging the the OWUI's KB having ID `owui_kb_id` is uploaded, its chuncks are stored in Retriva's KB with  ID set to `retriva_kb_id`. A similar approach is used for document metadata:
+
+```
+$ curl http://localhost:8002/internal/mappings/documents | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  6038  100  6038    0     0  3432k      0 --:--:-- --:--:-- --:--:-- 5896k
+[
+  {
+    "id": 26,
+    "owui_file_id": "453310e5-1a10-4d44-be02-2582dec2de29",
+    "filename": "ey-gl-practical-refrence-architecture-for-cra-compliance-11-2025.pdf",
+    "content_type": "application/pdf",
+    "content_hash": "1082fa9a0c3c8795cef4958842645f2e2bd1e6adc6865a6af9e529b476e061fe",
+    "retriva_doc_id": "owui:453310e5-1a10-4d44-be02-2582dec2de29",
+    "status": "synced",
+    "created_at": "2026-04-30T20:14:14.499267+00:00",
+    "updated_at": "2026-04-30T20:14:14.499267+00:00"
+  },
+...
+```

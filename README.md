@@ -161,11 +161,11 @@ From the very beginning, Retriva was designed with data sovereignty in mind—th
 
 ## Implementation
 
-See [this page](docs/implementation.md) for the implementation details.
-
 ### Software architecture
 
 ![](docs/assets/Retriva_software_architecture.drawio.png)
+
+See [this page](docs/implementation.md) for the implementation details.
 
 ### API
 
