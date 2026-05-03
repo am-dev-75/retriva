@@ -58,8 +58,10 @@ FILE_TYPE_REGISTRY: Dict[str, Dict] = {
         "extensions": {".md", ".markdown"},
         "sniffer": None,
     },
-    # Future formats:
-    # "pdf": {"extensions": {".pdf"}, "sniffer": None},
+    "pdf": {
+        "extensions": {".pdf"},
+        "sniffer": None,
+    },
 }
 
 # Directories that should never be traversed
