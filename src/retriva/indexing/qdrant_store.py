@@ -24,7 +24,7 @@ from typing import Callable, List, Optional
 
 logger = get_logger(__name__)
 
-COLLECTION_NAME = "retriva_chunks"
+COLLECTION_NAME = settings.qdrant_collection_name
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0  # seconds
 
