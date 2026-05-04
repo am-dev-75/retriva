@@ -21,11 +21,13 @@ Uses the configured LLM as a judge to verify factual consistency.
 import os
 import sys
 import re
+import argparse
+import random
 from pathlib import Path
 from typing import List, Tuple
 
 # Setup path to include retriva src
-sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from retriva.qa.answerer import ask_question
 from retriva.config import settings
@@ -41,7 +43,7 @@ RED = "\033[91m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-GOLDEN_ANSWERS_PATH = Path(__file__).resolve().parent.parent / "docs/tests/golden-answers.md"
+GOLDEN_ANSWERS_PATH = Path(__file__).resolve().parent.parent.parent / "docs/tests/golden-answers.md"
 
 def parse_golden_answers() -> List[Tuple[str, str]]:
     """
@@ -112,6 +114,10 @@ Respond ONLY with "YES" or "NO" followed by a short one-sentence explanation.
         return False, f"Judge error: {str(e)}"
 
 def run_smoke_test():
+    parser = argparse.ArgumentParser(description="Retriva Smoke Test")
+    parser.add_argument("-r", "--random", action="store_true", help="Execute the test for just one random answer picked from the file.")
+    args = parser.parse_args()
+
     logger.info(f"\n{BOLD}Retriva Smoke Test — Golden Answer Validation{RESET}")
     logger.debug(f"Loading reference: {GOLDEN_ANSWERS_PATH}\n")
 
@@ -119,6 +125,9 @@ def run_smoke_test():
     if not qa_pairs:
         logger.debug(f"{RED}No QA pairs found in reference file.{RESET}")
         return
+
+    if args.random:
+        qa_pairs = [random.choice(qa_pairs)]
 
     passed = 0
     total = len(qa_pairs)
