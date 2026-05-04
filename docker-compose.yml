@@ -1,0 +1,54 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: retriva-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  tika:
+    image: apache/tika:latest
+    container_name: retriva-tika
+    ports:
+      - "9998:9998"
+    restart: unless-stopped
+
+  retriva-ingestion:
+    build: .
+    container_name: retriva-ingestion-api
+    command: python -m retriva.ingestion_api --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - TIKA_SERVER_URL=http://tika:9998
+    volumes:
+      - ./src:/app/src  # Hot-reload mapping (optional)
+      # We also might want to mount local document folders here if using local paths
+      - ./docs4injection:/mnt/shared/implementation/docs4injection
+    depends_on:
+      - qdrant
+      - tika
+    restart: unless-stopped
+
+  retriva-openai:
+    build: .
+    container_name: retriva-openai-api
+    command: python -m retriva.openai_api --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - TIKA_SERVER_URL=http://tika:9998
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - qdrant
+    restart: unless-stopped

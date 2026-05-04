@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data and logs
+qdrant_data/
+logs/
+*.log
+debug/
+scratch/
+
+# IDEs
+.vscode/
+.idea/
+
+# Testing
+.pytest_cache/
+tests/
+
+# Agent
+.agent/
