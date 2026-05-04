@@ -104,8 +104,8 @@ class OCRmyPDFPreprocessor:
 
         try:
             ocrmypdf.ocr(
-                input_file=str(input_path),
-                output_file=str(output_path),
+                str(input_path),
+                str(output_path),
                 language=self.language,
                 deskew=self.deskew,
                 rotate_pages=self.rotate_pages,

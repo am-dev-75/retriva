@@ -37,6 +37,7 @@ import retriva.ingestion.html_parser          # noqa: F401
 import retriva.ingestion.parser_router        # noqa: F401
 import retriva.ingestion.tika_client          # noqa: F401
 import retriva.ingestion.ocrmypdf_preprocessor  # noqa: F401
+import retriva.ingestion.docling_parser       # noqa: F401
 
 
 # Mock Qdrant connection during app startup lifespan
@@ -67,6 +68,7 @@ def reset_job_manager():
     importlib.reload(retriva.ingestion.parser_router)
     importlib.reload(retriva.ingestion.tika_client)
     importlib.reload(retriva.ingestion.ocrmypdf_preprocessor)
+    importlib.reload(retriva.ingestion.docling_parser)
 
     # Mock Tika health_check so the v2 pipeline falls back to extension-based
     # MIME detection — no running Tika server required for unit tests

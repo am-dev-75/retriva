@@ -36,6 +36,7 @@ import retriva.ingestion.html_parser          # noqa: F401
 import retriva.ingestion.parser_router        # noqa: F401
 import retriva.ingestion.tika_client          # noqa: F401
 import retriva.ingestion.ocrmypdf_preprocessor  # noqa: F401
+import retriva.ingestion.docling_parser       # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +55,7 @@ def ensure_registrations():
     importlib.reload(retriva.ingestion.parser_router)
     importlib.reload(retriva.ingestion.tika_client)
     importlib.reload(retriva.ingestion.ocrmypdf_preprocessor)
+    importlib.reload(retriva.ingestion.docling_parser)
 
     # Mock Tika health_check — no running Tika server required
     with patch("retriva.ingestion.tika_client.TikaClient.health_check", return_value=False):

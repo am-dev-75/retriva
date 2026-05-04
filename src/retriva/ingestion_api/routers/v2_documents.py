@@ -54,6 +54,8 @@ from retriva.registry import CapabilityRegistry
 import retriva.ingestion.chunker              # noqa: F401 — registers DefaultChunker
 import retriva.ingestion.tika_client          # noqa: F401 — registers TikaClient
 import retriva.ingestion.ocrmypdf_preprocessor  # noqa: F401 — registers OCRmyPDFPreprocessor
+import retriva.ingestion.parser_router        # noqa: F401 — registers parser:default
+import retriva.ingestion.docling_parser       # noqa: F401 — registers parser:docling
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v2/documents", tags=["v2-documents"])
