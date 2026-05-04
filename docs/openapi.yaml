@@ -12,9 +12,9 @@ info:
   contact:
     name: Andrea Marson
     email: am.dev.75@gmail.com
-license:
-  name: Apache 2.0
-  url: http://www.apache.org/licenses/LICENSE-2.0.html
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
   - url: http://localhost:8001
