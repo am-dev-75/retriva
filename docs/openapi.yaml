@@ -33,6 +33,10 @@ tags:
     description: Integration and synchronization with Open WebUI
   - name: Jobs
     description: Ingestion job management
+  - name: v2-Documents
+    description: Generic multi-tool document ingestion (v2)
+  - name: v2-Jobs
+    description: Extended ingestion job management (v2)
   - name: Internal
     description: Debugging and observability endpoints
 
@@ -252,6 +256,94 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IngestResponse'
+
+  # --- v2 Ingestion API ---
+  /api/v2/documents:
+    post:
+      tags: [v2-Documents]
+      summary: Generic multi-parser ingestion (JSON body)
+      operationId: ingestDocumentV2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentIngestRequestV2'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponseV2'
+
+  /api/v2/documents/upload:
+    post:
+      tags: [v2-Documents]
+      summary: Generic multi-parser ingestion (multipart upload)
+      operationId: uploadDocumentV2
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, source_path]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                source_path:
+                  type: string
+                  description: Logic path/URI for the document
+                content_type:
+                  type: string
+                  description: Optional MIME type hint
+                user_metadata:
+                  type: string
+                  description: Optional JSON-encoded user metadata
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponseV2'
+
+  # --- v2 Jobs API ---
+  /api/v2/jobs:
+    get:
+      tags: [v2-Jobs]
+      summary: List recent v2 ingestion jobs
+      operationId: listJobsV2
+      responses:
+        '200':
+          description: List of jobs with stage information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobResponseV2'
+
+  /api/v2/jobs/{job_id}:
+    get:
+      tags: [v2-Jobs]
+      summary: Get v2 job status
+      operationId: getJobV2
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job details with pipeline stage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponseV2'
 
   # --- OpenAI Chat API ---
   /v1/models:
@@ -500,6 +592,55 @@ components:
         status: {type: string}
         message: {type: string}
         job_id: {type: string}
+
+    IngestResponseV2:
+      type: object
+      required: [status, message, job_id]
+      properties:
+        status: {type: string}
+        message: {type: string}
+        job_id: {type: string}
+
+    DocumentIngestRequestV2:
+      type: object
+      required: [source_uri]
+      properties:
+        source_uri:
+          type: string
+          description: Path or URI to the document to ingest.
+        content_type:
+          type: string
+          description: Explicit MIME type hint.
+        user_metadata:
+          type: object
+          additionalProperties: {type: string}
+          description: Optional user-provided key/value metadata.
+        parser_hint:
+          type: string
+          description: Force a specific parser backend (e.g. 'docling', 'ocrmypdf').
+
+    JobStage:
+      type: string
+      enum: [DETECTING, PREPROCESSING, PARSING, NORMALIZATION, CHUNKING, INDEXING]
+      description: Ordered stages of the v2 ingestion pipeline.
+
+    JobResponseV2:
+      type: object
+      required: [job_id, status, source, job_type, created_at, updated_at]
+      properties:
+        job_id: {type: string}
+        status: {type: string}
+        source: {type: string}
+        job_type: {type: string}
+        current_stage:
+          $ref: '#/components/schemas/JobStage'
+        stages_completed:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobStage'
+        created_at: {type: string}
+        updated_at: {type: string}
+        error: {type: string}
 
     JobResponse:
       type: object
