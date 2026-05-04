@@ -21,7 +21,7 @@ types, and nesting must not diverge.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 import time
 import uuid
 
@@ -78,6 +78,7 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = Field(False, description="Accepted but ignored (not yet supported)")
     temperature: Optional[float] = None
     top_p: Optional[float] = None
+    user_metadata_filter: Optional[Dict[str, str]] = Field(None, description="Filter chunks by metadata")
 
 
 # ---------------------------------------------------------------------------

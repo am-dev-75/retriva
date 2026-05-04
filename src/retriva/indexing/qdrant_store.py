@@ -20,7 +20,7 @@ from retriva.config import settings
 from retriva.domain.models import Chunk
 from retriva.indexing.embeddings import get_embeddings
 from retriva.logger import get_logger
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict
 
 logger = get_logger(__name__)
 
@@ -99,11 +99,24 @@ def upsert_chunks(client: QdrantClient, chunks: List[Chunk], cancel_check: Optio
         _upsert_with_retry(client, points, batch_num)
 
 
-def search_chunks(client: QdrantClient, query_vector: List[float], retriever_top_k: int = 5) -> List[dict]:
+def search_chunks(client: QdrantClient, query_vector: List[float], retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None) -> List[dict]:
     logger.debug(f"Searching top_{retriever_top_k} chunks in '{COLLECTION_NAME}'...")
+    
+    query_filter = None
+    if metadata_filter:
+        must_conditions = [
+            FieldCondition(
+                key=f"user_metadata.{k}",
+                match=MatchValue(value=v),
+            )
+            for k, v in metadata_filter.items()
+        ]
+        query_filter = Filter(must=must_conditions)
+
     results = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
+        query_filter=query_filter,
         limit=retriever_top_k
     )
     return [hit.payload for hit in results.points]
@@ -124,4 +137,26 @@ def delete_chunks_by_source_path(client: QdrantClient, source_path: str):
                 )
             ]
         ),
+    )
+
+
+def delete_chunks_by_metadata(client: QdrantClient, metadata_filter: Dict[str, str]):
+    """
+    Delete all chunks (points) in Qdrant that match the given user_metadata filter.
+    """
+    logger.info(f"Deleting chunks for metadata_filter: {metadata_filter}")
+    if not metadata_filter:
+        return
+        
+    must_conditions = [
+        FieldCondition(
+            key=f"user_metadata.{k}",
+            match=MatchValue(value=v),
+        )
+        for k, v in metadata_filter.items()
+    ]
+    
+    client.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=Filter(must=must_conditions),
     )

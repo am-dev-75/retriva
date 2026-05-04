@@ -18,6 +18,7 @@ from retriva.qa.grounding import validate_grounding
 from retriva.registry import CapabilityRegistry
 from retriva.logger import get_logger
 from retriva.profiler import Profiler
+from typing import Optional, Dict
 
 # Import modules to trigger default registrations
 import retriva.qa.retriever        # noqa: F401 — registers DefaultRetriever
@@ -116,7 +117,7 @@ def _hybrid_select_if_enabled(
     )
 
 
-def _retrieve_and_select(query: str, retriever_top_k: int, profiler) -> list[dict]:
+def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_filter: Optional[Dict[str, str]] = None) -> list[dict]:
     """
     Run the full retrieval pipeline: vector search → rerank → hybrid select.
 
@@ -124,7 +125,7 @@ def _retrieve_and_select(query: str, retriever_top_k: int, profiler) -> list[dic
     """
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    chunks = retriever.retrieve(query, top_k=retriever_top_k)
+    chunks = retriever.retrieve(query, top_k=retriever_top_k, metadata_filter=metadata_filter)
 
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")
@@ -145,12 +146,12 @@ def _retrieve_and_select(query: str, retriever_top_k: int, profiler) -> list[dic
     return chunks
 
 
-def ask_question(question: str, retriever_top_k: int = 5) -> dict:
+def ask_question(question: str, retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None) -> dict:
     logger.info(f"Processing question: {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
 
     profiler = Profiler.get_current()
-    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler)
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filter)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
     logger.info(f"Final context: {len(chunks)} chunks from up to {settings.max_citations} sources.")
@@ -180,12 +181,12 @@ def ask_question(question: str, retriever_top_k: int = 5) -> dict:
     return {"answer": answer_text, "retrieved_chunks": chunks, "grounding": grounding}
 
 
-def ask_question_streaming(question: str, retriever_top_k: int = 5):
+def ask_question_streaming(question: str, retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None):
     logger.info(f"Processing question (streaming): {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
 
     profiler = Profiler.get_current()
-    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler)
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filter)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
@@ -242,7 +243,7 @@ def ask_question_streaming_without_retrieval(question: str):
                     yield delta.content
     return [], content_generator()
 
-async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
+async def ask_question_streaming_async(question: str, retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None):
     logger.info(f"Processing question (async streaming): {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
     
@@ -252,7 +253,7 @@ async def ask_question_streaming_async(question: str, retriever_top_k: int = 5):
 
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k)
+    chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k, metadata_filter=metadata_filter)
 
     if profiler:
         profiler.mark_phase("retrieval_vector_search_complete")

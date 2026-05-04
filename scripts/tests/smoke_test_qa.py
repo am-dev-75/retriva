@@ -23,13 +23,13 @@ import sys
 import re
 import argparse
 import random
+import requests
 from pathlib import Path
 from typing import List, Tuple
 
 # Setup path to include retriva src
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from retriva.qa.answerer import ask_question
 from retriva.config import settings
 from openai import OpenAI
 from retriva.logger import get_logger, setup_logging
@@ -137,8 +137,16 @@ def run_smoke_test():
         
         # 1. Run Pipeline
         try:
-            result = ask_question(question, retriever_top_k=settings.retriever_top_k)
-            generated = result["answer"]
+            payload = {
+                "model": settings.chat_model,
+                "messages": [{"role": "user", "content": question}],
+                "stream": False
+            }
+            port = settings.openai_api_port
+            r = requests.post(f"http://127.0.0.1:{port}/v1/chat/completions", json=payload, timeout=120)
+            r.raise_for_status()
+            response_data = r.json()
+            generated = response_data["choices"][0]["message"]["content"]
         except Exception as e:
             logger.info(f"  {RED}FAILED (Pipeline Error):{RESET} {str(e)}\n")
             continue

@@ -215,7 +215,7 @@ async def _handle_non_streaming(
             answer = await run_in_threadpool(ask_question_without_retrieval, question)
             result = {"answer": answer, "retrieved_chunks": []}
         else:
-            result = await run_in_threadpool(ask_question, question, settings.retriever_top_k)
+            result = await run_in_threadpool(ask_question, question, settings.retriever_top_k, request.user_metadata_filter)
     except Exception as e:
         logger.error(f"QA pipeline error: {e}")
         raise HTTPException(
@@ -287,7 +287,7 @@ async def _handle_streaming(
              chunks, content_gen = await ask_question_streaming_without_retrieval_async(question)
         else:
             chunks, content_gen = await ask_question_streaming_async(
-                question, settings.retriever_top_k
+                question, settings.retriever_top_k, request.user_metadata_filter
             )
     except Exception as e:
         logger.error(f"QA pipeline error (streaming init): {e}")

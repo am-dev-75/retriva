@@ -223,3 +223,6 @@ class JobResponse(BaseModel):
     created_at: str
     updated_at: str
     error: Optional[str] = None
+
+class DeleteMetadataRequest(BaseModel):
+    user_metadata_filter: Dict[str, str] = Field(..., description="Filter chunks by metadata for deletion")

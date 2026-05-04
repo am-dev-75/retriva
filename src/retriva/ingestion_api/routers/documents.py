@@ -13,9 +13,10 @@
 # limitations under the License.
 
 from fastapi import APIRouter, status, Response
-from retriva.indexing.qdrant_store import get_client, delete_chunks_by_source_path, COLLECTION_NAME
+from retriva.indexing.qdrant_store import get_client, delete_chunks_by_source_path, delete_chunks_by_metadata, COLLECTION_NAME
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from retriva.logger import get_logger
+from retriva.ingestion_api.schemas import DeleteMetadataRequest
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -60,5 +61,20 @@ async def delete_document(doc_id: str):
         
     except Exception as e:
         logger.error(f"Error during document deletion for {doc_id}: {e}")
-        # Return 204 to maintain quiet behavior in synchronization loops
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.delete("/metadata/filter", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_documents_by_metadata(request: DeleteMetadataRequest):
+    """
+    Delete all chunks from the vector store that match the given user_metadata filter.
+    """
+    logger.debug(f"Received request to delete chunks by metadata: {request.user_metadata_filter}")
+    client = get_client()
+    
+    try:
+        delete_chunks_by_metadata(client, request.user_metadata_filter)
+        logger.info(f"retriva_deleted chunks by metadata: {request.user_metadata_filter}")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except Exception as e:
+        logger.error(f"Error during chunk deletion by metadata {request.user_metadata_filter}: {e}")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
