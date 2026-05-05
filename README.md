@@ -203,8 +203,9 @@ Access web UI at http://localhost:6333/dashboard
 2026-04-03T21:17:56.149519Z  INFO actix_server::server: starting service: "actix-web-service-0.0.0.0:6333", workers: 31, listening on: 0.0.0.0:6333
 ```
 
+* Install required packages
+  * `$ sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-ita ghostscript`
 * After cloning this repository
-
   * install dependencies (use of a virtual environment is recommended):
     ```(retriva-venv) $ pip install -r requirements.txt```
   * Copy `.env` from `.env.example` and fill in the values so that Retriva can connect to the Qdrant instance and the LLM's runner(s) you intend to use.
@@ -217,7 +218,7 @@ Access web UI at http://localhost:6333/dashboard
 * Build the knowledge base from *your* documents with the CLI. For instance:
 
 ```bash
-(retriva-venv) $ PYTHONPATH=src python -m retriva.cli reindex --path ~/my_documents
+(retriva-venv) $ PYTHONPATH=src python -m retriva.cli ingest --path ~/my_documents
 ```
 
 For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
