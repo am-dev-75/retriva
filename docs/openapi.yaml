@@ -37,6 +37,8 @@ tags:
     description: Generic multi-tool document ingestion (v2)
   - name: v2-Jobs
     description: Extended ingestion job management (v2)
+  - name: Artifacts
+    description: Document generation and rendering (v2)
   - name: Internal
     description: Debugging and observability endpoints
 
@@ -345,6 +347,97 @@ paths:
               schema:
                 $ref: '#/components/schemas/JobResponseV2'
 
+  # --- Artifacts API (v2) ---
+  /api/v2/artifacts:
+    post:
+      tags: [Artifacts]
+      summary: Create artifact generation job
+      operationId: createArtifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactRequestV2'
+      responses:
+        '202':
+          description: Artifact job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponseV2'
+
+  /api/v2/artifacts/{artifact_id}:
+    get:
+      tags: [Artifacts]
+      summary: Get artifact metadata and status
+      operationId: getArtifact
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Artifact job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponseV2'
+        '404':
+          description: Artifact not found
+    delete:
+      tags: [Artifacts]
+      summary: Delete artifact
+      operationId: deleteArtifact
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Artifact deleted or not found
+
+  /api/v2/artifacts/{artifact_id}/content:
+    get:
+      tags: [Artifacts]
+      summary: Download rendered artifact content
+      operationId: getArtifactContent
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rendered file content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '202':
+          description: Artifact generation still in progress
+        '404':
+          description: Artifact not found
+
+  /api/v2/capabilities:
+    get:
+      tags: [Artifacts]
+      summary: Get system capabilities and renderers
+      operationId: getCapabilities
+      responses:
+        '200':
+          description: Capability report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactCapabilitiesResponseV2'
+
   # --- OpenAI Chat API ---
   /v1/models:
     get:
@@ -626,20 +719,40 @@ components:
 
     JobResponseV2:
       type: object
-      required: [job_id, status, source, job_type, created_at, updated_at]
       properties:
         job_id: {type: string}
         status: {type: string}
         source: {type: string}
         job_type: {type: string}
-        current_stage:
-          $ref: '#/components/schemas/JobStage'
-        stages_completed:
-          type: array
-          items:
-            $ref: '#/components/schemas/JobStage'
+        current_stage: {type: string}
+        stages_completed: {type: array, items: {type: string}}
         created_at: {type: string}
         updated_at: {type: string}
+        error: {type: string}
+
+    ArtifactRequestV2:
+      type: object
+      required: [artifact_type, format]
+      properties:
+        artifact_type: {type: string}
+        format: {type: string}
+        parameters: {type: object, additionalProperties: {type: string}}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    ArtifactResponseV2:
+      type: object
+      properties:
+        status: {type: string}
+        message: {type: string}
+        job_id: {type: string}
+        artifact_id: {type: string}
+
+    ArtifactCapabilitiesResponseV2:
+      type: object
+      properties:
+        supported_formats: {type: array, items: {type: string}}
+        supported_types: {type: array, items: {type: string}}
+        templates: {type: array, items: {type: string}}
         error: {type: string}
 
     JobResponse:
