@@ -4,7 +4,18 @@
 
 - [Retriva](#retriva)
   - [Introduction](#introduction)
-    - [Key Features](#key-features)
+    - [Features and design principles](#features-and-design-principles)
+      - [Key features](#key-features)
+        - [Details about basic features](#details-about-basic-features)
+        - [Details about advanced features](#details-about-advanced-features)
+      - [Design principles](#design-principles)
+        - [Optimized for engineering/scientific knowledge bases](#optimized-for-engineeringscientific-knowledge-bases)
+        - [Knowledge base deep grounding](#knowledge-base-deep-grounding)
+        - [Multi-modal support](#multi-modal-support)
+        - [Modular design](#modular-design)
+        - [Models agnosticism](#models-agnosticism)
+        - [Frontend agnosticism](#frontend-agnosticism)
+        - [Data Sovereignty](#data-sovereignty)
     - [License notes](#license-notes)
   - [Architecture](#architecture)
     - [Overview](#overview)
@@ -14,10 +25,6 @@
     - [End-to-End Flow Summary](#end-to-end-flow-summary)
       - [Upload-only flow](#upload-only-flow)
       - [Question flow](#question-flow)
-    - [Features and design principles](#features-and-design-principles)
-      - [Basic](#basic)
-      - [Advanced features](#advanced-features)
-      - [Data Sovereignty](#data-sovereignty)
   - [Implementation](#implementation)
     - [Software architecture](#software-architecture)
     - [API](#api)
@@ -31,22 +38,62 @@ Retriva is a conversational AI agent. It is built to provide users with accurate
 
 For more details abouth the birth of the project, please see also [Retriva Documentation](https://github.com/am-dev-75/retriva-docs).
 
-### Key Features
+### Features and design principles
 
-* OpenAI-compatible integration throughout
-* Asynchronous, resilient ingestion
+#### Key features
+
+* OpenAI-compatible chat API
+* Asynchronous, resilient ingestion (proprietary streaming API)
 * Strict separation of control plane and data plane
+* Nearly-deterministic behavior
+  * Given the same user request and identical Knowledge Bases, the system will always produce the same output
 * Identity-preserving document handling
   * Every document keeps the identity it was given at upload time, even if its content is identical to another document. In other words, Retriva does not collapse, merge, or deduplicate documents automatically based on file content.
+* Document creation API supporting the most common document formats such as PDF, DOCX, XLSX, ODT, ODS, ODP, and Markdown.
 * Debug-only internal observability endpoints
 * Seamless integration with [Open WebUI](https://github.com/open-webui/open-webui)
   * To enable this, use
     * This container: [Open WebUI for Retriva](https://github.com/am-dev-75/open-webui_retriva)
     * [This additional service](https://github.com/am-dev-75/open-webui_retriva-adapter), acting as a bridge between Retriva backend and Open WebUI frontend
 * When combined with [Open WebUI](https://github.com/am-dev-75/open-webui_retriva)
-  * Chat-based ingestion directives
-  * Deterministic intent classification
-    * Given the same request, the adapter will always make the same routing decision — regardless of timing, retries, or OWUI’s internal orchestration.
+  * Chat-based special ingestion directives allowing:
+    * User-provided metadata
+    * Deterministic intent classification
+      * Given the same request, the adapter will always make the same routing decision — regardless of timing, retries, or OWUI’s internal orchestration.
+
+##### Details about basic features
+
+See [this page](docs/basic_features.md).
+
+##### Details about advanced features
+
+See [this page](docs/advanced_features.md).
+
+#### Design principles
+
+##### Optimized for engineering/scientific knowledge bases
+
+Retriva is optimized for engineering/scientific knowledge bases. This means that it is designed to handle the specific needs of engineering and scientific users, such as those who work with technical documentation, research papers, and other specialized content. Thanks to the use of specialized models, embeddings, and chunking strategies, the system is able to provide accurate and relevant information to users, even though this is "hidden" in complex, articulated, and technical documents feeding Retriva during ingestion.
+
+##### Knowledge base deep grounding
+
+Retriva is built on a "grounded-only" principle. It generates responses based strictly on the information available in the provided Knowledge Base (KB). If the system cannot find sufficient information within the KB to answer a query, it will state so explicitly rather than attempting to synthesize or "hallucinate" a response. This ensures high reliability and trustworthiness for information-critical applications.
+
+##### Multi-modal support
+Retriva is designed to support multi-modal inputs, including text, images, and other data types. This allows users to interact with Retriva in a more natural and intuitive way, as well as to leverage the full potential of multi-modal models.
+
+##### Modular design
+Retriva is designed to be modular, allowing users to customize the system to their specific needs. This is achieved through the use of a plugin architecture, which allows users to add or remove features as needed. This modular design also makes it easier to maintain and upgrade the system, as each component can be developed and tested independently.
+
+##### Models agnosticism
+Retriva is designed to be model-agnostic, allowing users to choose the models that best suit their needs. This is achieved simply by changing environment variables specifying the desired models.
+
+##### Frontend agnosticism
+Retriva is designed to be frontend-agnostic, allowing users to choose the frontend that best suits their needs. This is achieved by implementing a thin adapter layer between the frontend and the backend, which abstracts the backend API. By default, Retriva comes with an [adapter](https://github.com/am-dev-75/open-webui_retriva-adapter) for [Open WebUI](https://github.com/open-webui/open-webui).
+
+##### Data Sovereignty
+
+From the very beginning, Retriva was designed with data sovereignty in mind—that is, ensuring that parties other than the owner of the data entered into the knowledge base could not access it. Currently, there are several solutions to address this requirement, each with its own pros and cons. This [section](docs/data_sovereignty.md) provides an overview of these options. Given Retriva’s modular nature, it can be deployed in various ways, including hybrid configurations that combine the options listed in the linked page.
 
 ### License notes
 
@@ -145,19 +192,6 @@ Adapter → Retriva
 Retriva → LLM
 ```
 At no point do uploads implicitly cause LLM calls.
-
-### Features and design principles
-#### Basic
-
-See [this page](docs/basic_features.md).
-
-#### Advanced features
-
-See [this page](docs/advanced_features.md).
-
-#### Data Sovereignty
-
-From the very beginning, Retriva was designed with data sovereignty in mind—that is, ensuring that parties other than the owner of the data entered into the knowledge base could not access it. Currently, there are several solutions to address this requirement, each with its own pros and cons. This [section](docs/data_sovereignty.md) provides an overview of these options. Given Retriva’s modular nature, it can be deployed in various ways, including hybrid configurations that combine the options listed in the linked page.
 
 ## Implementation
 
