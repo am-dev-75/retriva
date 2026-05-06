@@ -31,12 +31,18 @@ class OpenDocumentSkeletonRenderer:
     ) -> bool:
         logger.info(f"Rendering skeleton for OpenDocument: {artifact_type}")
         
+        from retriva.rendering.services import fetch_artifact_data
+        data = fetch_artifact_data(artifact_type, parameters)
+        
         format_ext = output_path.suffix.lower()
-        title = parameters.get("title", f"Retriva {format_ext[1:].upper()} Artifact")
+        title = data.get("title", f"Retriva {format_ext[1:].upper()} Artifact")
+        content_body = data.get("content", "No content available.")
         
         content = (
             f"Artifact Title: {title}\n"
             f"Format: {format_ext[1:].upper()}\n\n"
+            f"{content_body}\n\n"
+            "--- NOTE ---\n"
             "This is a skeleton placeholder for OpenDocument formats.\n"
             "Full implementation is planned for the next release."
         )

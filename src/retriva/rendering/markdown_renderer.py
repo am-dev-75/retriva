@@ -31,8 +31,11 @@ class MarkdownRenderer:
     ) -> bool:
         logger.info(f"Rendering markdown artifact: {artifact_type}")
         
-        title = parameters.get("title", "Retriva Artifact")
-        content = parameters.get("content", "No content provided.")
+        from retriva.rendering.services import fetch_artifact_data
+        data = fetch_artifact_data(artifact_type, parameters)
+        
+        title = data.get("title", "Retriva Artifact")
+        content = data.get("content", "No content available.")
         
         # Deterministic output
         md_content = f"# {title}\n\n{content}\n"

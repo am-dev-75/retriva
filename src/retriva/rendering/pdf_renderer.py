@@ -19,6 +19,26 @@ from retriva.logger import get_logger
 
 logger = get_logger(__name__)
 
+def clean_text_for_pdf(text: str) -> str:
+    """Replace common Unicode characters with Latin-1 equivalents for fpdf2."""
+    replacements = {
+        "\u2013": "-",  # en-dash
+        "\u2014": "--", # em-dash
+        "\u2018": "'",  # left single quote
+        "\u2019": "'",  # right single quote
+        "\u201c": '"',  # left double quote
+        "\u201d": '"',  # right double quote
+        "\u2022": "*",  # bullet
+        "\u2026": "...", # ellipsis
+        "\u2122": "(TM)",
+        "\u00a9": "(C)",
+        "\u00ae": "(R)",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Fallback: replace any remaining non-latin-1 characters with '?'
+    return text.encode("latin-1", "replace").decode("latin-1")
+
 class PDFRenderer:
     """Renderer for PDF artifacts using fpdf2."""
 
@@ -37,8 +57,11 @@ class PDFRenderer:
             logger.error("fpdf2 not installed. Cannot render PDF.")
             return False
 
-        title = parameters.get("title", "Retriva Artifact")
-        content = parameters.get("content", "No content provided.")
+        from retriva.rendering.services import fetch_artifact_data
+        data = fetch_artifact_data(artifact_type, parameters)
+        
+        title = clean_text_for_pdf(data.get("title", "Retriva Artifact"))
+        content = clean_text_for_pdf(data.get("content", "No content available."))
         
         pdf = FPDF()
         pdf.add_page()

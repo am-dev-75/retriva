@@ -37,8 +37,11 @@ class XlsxRenderer:
             logger.error("openpyxl not installed. Cannot render xlsx.")
             return False
 
-        title = parameters.get("title", "Retriva Artifact")
-        content = parameters.get("content", "No content provided.")
+        from retriva.rendering.services import fetch_artifact_data
+        data = fetch_artifact_data(artifact_type, parameters)
+        
+        title = data.get("title", "Retriva Artifact")
+        content = data.get("content", "No content available.")
         
         wb = Workbook()
         ws = wb.active
