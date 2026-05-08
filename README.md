@@ -35,7 +35,7 @@
 
 ## Introduction
 
-Retriva is a conversational AI agent. It is built to provide users with accurate and relevant information by leveraging the power of Retrieval Augmented Generation (RAG). It is built to provide users with accurate and relevant information by leveraging the power of Retrieval Augmented Generation (RAG). It is designed for enterprise use cases where data privacy and security are of utmost importance.
+Retriva is a conversational AI agent. It is built to provide users with accurate and relevant information by leveraging the power of Retrieval Augmented Generation (RAG).  It is designed for enterprise use cases where data privacy and security are of utmost importance.
 
 For more details abouth the birth of the project, please see also [Retriva Documentation](https://github.com/am-dev-75/retriva-docs).
 
@@ -82,15 +82,19 @@ Retriva is optimized for engineering/scientific knowledge bases. This means that
 Retriva is built on a "grounded-only" principle. It generates responses based strictly on the information available in the provided Knowledge Base (KB). If the system cannot find sufficient information within the KB to answer a query, it will state so explicitly rather than attempting to synthesize or "hallucinate" a response. This ensures high reliability and trustworthiness for information-critical applications.
 
 ##### Multi-modal support
+
 Retriva is designed to support multi-modal inputs, including text, images, and other data types. This allows users to interact with Retriva in a more natural and intuitive way, as well as to leverage the full potential of multi-modal models.
 
 ##### Modular design
+
 Retriva is designed to be modular, allowing users to customize the system to their specific needs. This is achieved through the use of a plugin architecture, which allows users to add or remove features as needed. This modular design also makes it easier to maintain and upgrade the system, as each component can be developed and tested independently.
 
 ##### Models agnosticism
+
 Retriva is designed to be model-agnostic, allowing users to choose the models that best suit their needs. This is achieved simply by changing environment variables specifying the desired models.
 
 ##### Frontend agnosticism
+
 Retriva is designed to be frontend-agnostic, allowing users to choose the frontend that best suits their needs. This is achieved by implementing a thin adapter layer between the frontend and the backend, which abstracts the backend API. By default, Retriva comes with an [adapter](https://github.com/am-dev-75/open-webui_retriva-adapter) for [Open WebUI](https://github.com/open-webui/open-webui).
 
 ##### Data Sovereignty
@@ -104,6 +108,7 @@ Why did I choose the Apache License 2.0? Because this license, combined with cer
 ## Architecture
 
 ### Overview
+
 Retriva is a retrieval‑augmented generation (RAG) platform designed to integrate seamlessly with Open WebUI (OWUI) while preserving a clean separation of concerns between user interaction, ingestion orchestration, and LLM execution.
 
 The final logical architecture should look like ![this:](docs/assets/Retriva_target_logic_architecture.drawio.png)
@@ -133,6 +138,7 @@ To interface Open WebUI with Retriva, an [adapter](https://github.com/am-dev-75/
 
 The adapter sits between OWUI and Retriva and is the architectural keystone of the system.
 Its responsibilities include:
+
 * Intent classification
   * Distinguishes human-authored questions from OWUI-generated control prompts
   * Ensures uploads and directives do not trigger unintended LLM calls
@@ -161,7 +167,9 @@ Crucially, the adapter:
 It is a pure control plane, not a model gateway.
 
 ### Retriva core
+
 Retriva is the data plane and system of record for:
+
 * Document ingestion
 * Chunking and embedding
 * Metadata storage (including user-provided tags)
@@ -170,6 +178,7 @@ Retriva is the data plane and system of record for:
 * LLM request construction
 
 Retriva:
+
 * Receives ingestion jobs from the adapter
 * Stores documents using its own identifiers (doc_id)
 * Applies metadata exactly as provided at ingestion time
@@ -178,7 +187,9 @@ Retriva:
 Retriva treats every upload as a distinct document, even if file content is identical. This preserves user intent, document lifecycle independence, and metadata correctness.
 
 ### End-to-End Flow Summary
+
 #### Upload-only flow
+
 ```
 User → OWUI (upload)
 OWUI → Adapter (chat + control prompts)
@@ -186,13 +197,16 @@ Adapter → Synthetic acknowledgement
 Adapter → OWUI Files API (polling)
 Adapter → Retriva ingestion API
 ```
+
 #### Question flow
+
 ```
 User → OWUI (question)
 OWUI → Adapter
 Adapter → Retriva
 Retriva → LLM
 ```
+
 At no point do uploads implicitly cause LLM calls.
 
 ## Implementation
@@ -218,7 +232,7 @@ See [this page](./docs/api.md) for the API documentation.
  / _` |/ _` | '__/ _` | '_ \| __| 
 | (_| | (_| | | | (_| | | | | |_  
  \__, |\__,_|_|  \__,_|_| |_|\__| 
-    |_|                   
+    |_|                 
 
 Version: 1.17.1, build: eabee371
 Access web UI at http://localhost:6333/dashboard
