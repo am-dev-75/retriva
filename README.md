@@ -30,6 +30,7 @@
     - [API](#api)
   - [Quick Start](#quick-start)
     - [Use in tandem with Open WebUI (optional)](#use-in-tandem-with-open-webui-optional)
+  - [Future development](#future-development)
   - [Licensing](#licensing)
 
 ## Introduction
@@ -50,6 +51,7 @@ For more details abouth the birth of the project, please see also [Retriva Docum
 * Identity-preserving document handling
   * Every document keeps the identity it was given at upload time, even if its content is identical to another document. In other words, Retriva does not collapse, merge, or deduplicate documents automatically based on file content.
 * Document creation API supporting the most common document formats such as PDF, DOCX, XLSX, ODT, ODS, ODP, and Markdown.
+* LangChain-free
 * Debug-only internal observability endpoints
 * Seamless integration with [Open WebUI](https://github.com/open-webui/open-webui)
   * To enable this, use
@@ -285,6 +287,13 @@ For more details, run `PYTHONPATH=src python -m retriva.cli -h`.
 * Start Open WebUI container.
 * Log in to OWUI and create a [function](https://docs.openwebui.com/features/extensibility/plugin/) by copying [this code](https://github.com/am-dev-75/open-webui_retriva-adapter/blob/main/adapter/scripts/retriva_push_based_synchronization.py). Change the Open WebUI's Adapter URL according to your deployment. This function must either enabled for the model "Retriva" or globally.
 * In OWUI, point your browser to the Open WebUI for Retriva instance and start having fun.
+
+## Future development
+
+* Test deployment on a confidential computing-enabled cloud, using TensorRT-LLM as the LLM runner.
+* Enable Qdrant hybrid search (semantic + keyword).
+* Refine retrieval pipeline by adding GraphRAG capabilities.
+* Improve Open WebUI integration by using OWUI's IAM for user authentication and authorization.
 
 ## Licensing
 
