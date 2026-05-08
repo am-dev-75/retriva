@@ -64,8 +64,20 @@ class DoclingParser:
         if self._converter is None:
             try:
                 from docling.document_converter import DocumentConverter
-                self._converter = DocumentConverter()
-                logger.debug("Docling DocumentConverter initialized")
+                from docling.datamodel.pipeline_options import PdfPipelineOptions
+                from docling.datamodel.base_models import InputFormat
+                from retriva.config import settings
+
+                device = settings.accelerator_device
+
+                # Configure converter to use the specified device (e.g. 'cuda', 'cpu', 'auto')
+                # This affects layout analysis, table extraction, and OCR.
+                self._converter = DocumentConverter(
+                    format_options={
+                        InputFormat.PDF: PdfPipelineOptions(device=device),
+                    }
+                )
+                logger.debug(f"Docling DocumentConverter initialized with device: {device}")
             except ImportError:
                 raise ImportError(
                     "docling is not installed. Install it with: pip install docling"
