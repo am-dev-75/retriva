@@ -63,7 +63,7 @@ class DoclingParser:
         """Lazy-initialize the DocumentConverter (heavy import)."""
         if self._converter is None:
             try:
-                from docling.document_converter import DocumentConverter
+                from docling.document_converter import DocumentConverter, PdfFormatOption
                 from docling.datamodel.pipeline_options import PdfPipelineOptions
                 from docling.datamodel.base_models import InputFormat
                 from retriva.config import settings
@@ -72,9 +72,17 @@ class DoclingParser:
 
                 # Configure converter to use the specified device (e.g. 'cuda', 'cpu', 'auto')
                 # This affects layout analysis, table extraction, and OCR.
+                pipeline_options = PdfPipelineOptions()
+                try:
+                    pipeline_options.accelerator_options.device = device
+                except AttributeError:
+                    # Fallback in case older versions of Docling don't have accelerator_options
+                    logger.debug("accelerator_options not found on PdfPipelineOptions, passing device directly")
+                    pipeline_options = PdfPipelineOptions(device=device)
+
                 self._converter = DocumentConverter(
                     format_options={
-                        InputFormat.PDF: PdfPipelineOptions(device=device),
+                        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
                     }
                 )
                 logger.debug(f"Docling DocumentConverter initialized with device: {device}")
