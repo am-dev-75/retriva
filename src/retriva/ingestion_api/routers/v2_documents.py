@@ -50,6 +50,7 @@ from retriva.ingestion_api.schemas_v2 import (
     DocumentListResponse,
     DocumentCountResponse,
     DocumentResponse,
+    DocumentFilterRequest,
 )
 from retriva.logger import get_logger
 from retriva.registry import CapabilityRegistry
@@ -403,6 +404,38 @@ async def list_documents(
         )
     except Exception as e:
         logger.error(f"Error listing documents: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.post("/filter", response_model=DocumentListResponse)
+async def list_documents_filtered(
+    payload: DocumentFilterRequest
+):
+    """List unique documents from the vector store using a POST filter body."""
+    metadata = {}
+    if payload.metadata_filter and payload.metadata_filter.user_metadata:
+        metadata = payload.metadata_filter.user_metadata
+    
+    # Validate metadata if present
+    if metadata:
+        try:
+            validate_user_metadata(metadata)
+        except UserMetadataValidationError as e:
+            raise HTTPException(status_code=422, detail=e.details)
+
+    try:
+        client = get_client()
+        docs = list_documents_store(client, metadata_filter=metadata)
+        
+        return DocumentListResponse(
+            documents=[DocumentResponse(**d) for d in docs],
+            total=len(docs)
+        )
+    except Exception as e:
+        logger.error(f"Error filtering documents: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),

@@ -196,3 +196,11 @@ class RetrievalRequest(BaseModel):
 class RetrievalResponse(BaseModel):
     """Response containing retrieved chunks."""
     chunks: List[Dict[str, Any]]
+
+class MetadataFilter(BaseModel):
+    """Internal metadata filter container."""
+    user_metadata: Optional[Dict[str, str]] = None
+
+class DocumentFilterRequest(BaseModel):
+    """Request to filter documents via POST body."""
+    metadata_filter: Optional[MetadataFilter] = None

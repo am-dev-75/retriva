@@ -17,12 +17,12 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
-  - url: http://localhost:8001
-    description: Retriva Core (Ingestion API)
   - url: http://localhost:8000
+    description: Retriva Core (Ingestion API)
+  - url: http://localhost:8001
     description: Retriva Core (OpenAI Chat API)
   - url: http://localhost:8002
-    description: Open WebUI Adapter
+    description: Retriva Gateway API
 
 tags:
   - name: Ingestion
@@ -39,6 +39,10 @@ tags:
     description: Extended ingestion job management (v2)
   - name: Artifacts
     description: Document generation and rendering (v2)
+  - name: v2-Metadata
+    description: Metadata schema and values discovery (v2)
+  - name: v2-Retrieval
+    description: Vector and metadata-filtered retrieval (v2)
   - name: Internal
     description: Debugging and observability endpoints
 
@@ -261,6 +265,23 @@ paths:
 
   # --- v2 Ingestion API ---
   /api/v2/documents:
+    get:
+      tags: [v2-Documents]
+      summary: List unique documents
+      operationId: listDocumentsV2
+      parameters:
+        - name: user_metadata_filter
+          in: query
+          description: JSON-encoded metadata filter
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListResponse'
     post:
       tags: [v2-Documents]
       summary: Generic multi-parser ingestion (JSON body)
@@ -278,6 +299,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IngestResponseV2'
+
+  /api/v2/documents/filter:
+    post:
+      tags: [v2-Documents]
+      summary: Filter documents via POST body
+      operationId: filterDocumentsV2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentFilterRequest'
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListResponse'
+
+  /api/v2/documents/count:
+    get:
+      tags: [v2-Documents]
+      summary: Count unique documents
+      operationId: countDocumentsV2
+      parameters:
+        - name: user_metadata_filter
+          in: query
+          description: JSON-encoded metadata filter
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCountResponse'
 
   /api/v2/documents/upload:
     post:
@@ -311,6 +370,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IngestResponseV2'
+
+  /api/v2/documents/{doc_id}:
+    get:
+      tags: [v2-Documents]
+      summary: Get document details
+      operationId: getDocumentV2
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '404':
+          description: Document not found
 
   # --- v2 Jobs API ---
   /api/v2/jobs:
@@ -346,6 +426,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobResponseV2'
+
+  # --- Metadata API (v2) ---
+  /api/v2/metadata/schema:
+    get:
+      tags: [v2-Metadata]
+      summary: Get metadata schema
+      operationId: getMetadataSchemaV2
+      responses:
+        '200':
+          description: Available metadata keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataSchemaResponse'
+
+  /api/v2/metadata/values:
+    get:
+      tags: [v2-Metadata]
+      summary: Get values for a metadata key
+      operationId: getMetadataValuesV2
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataValuesResponse'
+
+  # --- Retrieval API (v2) ---
+  /api/v2/retrieval/query:
+    post:
+      tags: [v2-Retrieval]
+      summary: Vector search with metadata filters
+      operationId: queryRetrievalV2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrievalRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalResponse'
 
   # --- Artifacts API (v2) ---
   /api/v2/artifacts:
@@ -766,6 +899,74 @@ components:
         created_at: {type: string}
         updated_at: {type: string}
         error: {type: string}
+
+    DocumentResponse:
+      type: object
+      required: [doc_id, source_path, page_title]
+      properties:
+        doc_id: {type: string}
+        source_path: {type: string}
+        page_title: {type: string}
+        user_metadata: {type: object, additionalProperties: {type: string}}
+
+    DocumentListResponse:
+      type: object
+      required: [documents, total]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentResponse'
+        total: {type: integer}
+
+    DocumentCountResponse:
+      type: object
+      required: [count]
+      properties:
+        count: {type: integer}
+
+    MetadataSchemaResponse:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items: {type: string}
+
+    MetadataValuesResponse:
+      type: object
+      required: [key, values]
+      properties:
+        key: {type: string}
+        values:
+          type: array
+          items: {type: string}
+
+    RetrievalRequest:
+      type: object
+      required: [query]
+      properties:
+        query: {type: string}
+        top_k: {type: integer, default: 5}
+        user_metadata_filter: {type: object, additionalProperties: {type: string}}
+
+    RetrievalResponse:
+      type: object
+      required: [chunks]
+      properties:
+        chunks:
+          type: array
+          items: {type: object}
+
+    DocumentFilterRequest:
+      type: object
+      properties:
+        metadata_filter:
+          type: object
+          properties:
+            user_metadata:
+              type: object
+              additionalProperties: {type: string}
 
     # --- OpenAI Schemas ---
     ListModelsResponse:
