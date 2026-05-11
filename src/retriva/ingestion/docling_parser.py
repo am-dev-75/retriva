@@ -21,6 +21,7 @@ parsing of PDFs, DOCX, PPTX, HTML, and other document formats.  Emits
 """
 
 from pathlib import Path
+import threading
 from typing import Callable, List, Optional
 
 from retriva.domain.models import CanonicalRecord
@@ -58,6 +59,7 @@ class DoclingParser:
 
     def __init__(self):
         self._converter = None
+        self._lock = threading.Lock()
 
     def _get_converter(self):
         """Lazy-initialize the DocumentConverter (heavy import)."""
@@ -74,11 +76,19 @@ class DoclingParser:
                 # This affects layout analysis, table extraction, and OCR.
                 pipeline_options = PdfPipelineOptions()
                 try:
+                    pipeline_options.num_threads = 2
+                except Exception:
+                    pass
+                try:
                     pipeline_options.accelerator_options.device = device
                 except AttributeError:
                     # Fallback in case older versions of Docling don't have accelerator_options
                     logger.debug("accelerator_options not found on PdfPipelineOptions, passing device directly")
                     pipeline_options = PdfPipelineOptions(device=device)
+                    try:
+                        pipeline_options.num_threads = 2
+                    except Exception:
+                        pass
 
                 self._converter = DocumentConverter(
                     format_options={
@@ -114,7 +124,8 @@ class DoclingParser:
         logger.info(f"Docling parsing '{path.name}' (type={content_type})")
 
         try:
-            result = converter.convert(str(path))
+            with self._lock:
+                result = converter.convert(str(path))
         except Exception as e:
             logger.error(f"Docling conversion failed for '{path.name}': {e}")
             return []

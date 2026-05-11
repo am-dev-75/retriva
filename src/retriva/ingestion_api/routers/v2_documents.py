@@ -223,35 +223,49 @@ def process_document_v2(
         # ── Stage 3: PARSING ─────────────────────────────────────────
         manager.advance_stage(job_id, JobStage.PARSING.value)
 
-        parser_key = f"parser:{parser_hint}" if parser_hint else f"parser:{settings.v2_primary_parser}"
-        try:
-            parser = registry.get_instance(parser_key)
-        except KeyError:
-            if parser_hint:
-                logger.warning(
-                    f"Job {job_id}: unknown parser_hint '{parser_hint}', "
-                    f"falling back to '{settings.v2_primary_parser}'"
+        if detection.content_type.startswith("image/"):
+            logger.info(f"Job {job_id}: file is a standalone image, bypassing primary parser.")
+            parser_key = "v2_image_handler"
+            records = [
+                CanonicalRecord(
+                    document_id=source_uri,
+                    element_type="image",
+                    text="",
+                    source_uri=source_uri,
+                    parser_name="v2_image_handler",
+                    image_path=parse_source,
                 )
-                try:
-                    parser = registry.get_instance(
-                        f"parser:{settings.v2_primary_parser}"
+            ]
+        else:
+            parser_key = f"parser:{parser_hint}" if parser_hint else f"parser:{settings.v2_primary_parser}"
+            try:
+                parser = registry.get_instance(parser_key)
+            except KeyError:
+                if parser_hint:
+                    logger.warning(
+                        f"Job {job_id}: unknown parser_hint '{parser_hint}', "
+                        f"falling back to '{settings.v2_primary_parser}'"
                     )
-                except KeyError:
+                    try:
+                        parser = registry.get_instance(
+                            f"parser:{settings.v2_primary_parser}"
+                        )
+                    except KeyError:
+                        logger.warning(
+                            f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
+                            f"not available, using built-in default"
+                        )
+                        parser = registry.get_instance("parser:default")
+                else:
                     logger.warning(
                         f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
                         f"not available, using built-in default"
                     )
                     parser = registry.get_instance("parser:default")
-            else:
-                logger.warning(
-                    f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
-                    f"not available, using built-in default"
-                )
-                parser = registry.get_instance("parser:default")
 
-        records: List[CanonicalRecord] = parser.parse(
-            parse_source, detection.content_type, cancel_check
-        )
+            records: List[CanonicalRecord] = parser.parse(
+                parse_source, detection.content_type, cancel_check
+            )
 
         if cancel_check():
             raise CancellationError("Job cancelled after parsing")
@@ -295,9 +309,9 @@ def process_document_v2(
         # 4d. Normalize text content
         normalized.content_text = normalize_text(normalized.content_text)
 
-        if not normalized.content_text.strip():
+        if not normalized.content_text.strip() and not normalized.images:
             logger.warning(
-                f"Job {job_id}: empty content after normalization — skipping."
+                f"Job {job_id}: empty content and no images after normalization — skipping."
             )
             manager.complete_job(job_id)
             return

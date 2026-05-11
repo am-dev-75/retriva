@@ -30,13 +30,21 @@ def build_prompt(question: str, retrieved_chunks: List[Dict]) -> str:
         if title not in grouped:
             grouped[title] = {
                 "url": chunk.get("canonical_doc_id", chunk.get("source_path", "")),
-                "texts": [chunk.get("text", "")]
+                "texts": [chunk.get("text", "")],
+                "user_metadata": chunk.get("user_metadata", {})
             }
         else:
             # Only add if text is not exactly the same
             new_text = chunk.get("text", "")
             if new_text not in grouped[title]["texts"]:
                 grouped[title]["texts"].append(new_text)
+            
+            # Merge metadata
+            meta = chunk.get("user_metadata", {})
+            if meta:
+                if not grouped[title].get("user_metadata"):
+                    grouped[title]["user_metadata"] = {}
+                grouped[title]["user_metadata"].update(meta)
 
     context_str = ""
     source_list = ""
@@ -45,11 +53,19 @@ def build_prompt(question: str, retrieved_chunks: List[Dict]) -> str:
         combined_text = "\n\n---\n\n".join(data["texts"])
         source_id = f"[{title}]"
         
+        meta_str = ""
+        user_metadata = data.get("user_metadata")
+        if user_metadata:
+            meta_str = "Metadata tags:\n"
+            for k, v in user_metadata.items():
+                meta_str += f"- {k}: {v}\n"
+        
         # Build context block with unique source tag
         context_str += (
             f"\n<source id=\"{title}\">\n"
             f"Source: {title}\n"
             f"URL: {url}\n"
+            f"{meta_str}"
             f"{combined_text}\n"
             f"</source>\n"
         )
