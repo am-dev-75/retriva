@@ -113,6 +113,7 @@ def upsert_chunks(client: QdrantClient, chunks: List[Chunk], cancel_check: Optio
                         if c.metadata.source_paths
                         else c.metadata.source_path
                     ),
+                    "kb_id": c.metadata.kb_id,
                 }
             )
             for c, embedding in zip(batch_chunks, embeddings)
@@ -156,7 +157,8 @@ def search_chunks(
     retriever_top_k: int = 20, 
     metadata_filters: Optional[List[Dict[str, Any]]] = None,
     metadata_filter_mode: str = "soft",
-    query_text: Optional[str] = None
+    query_text: Optional[str] = None,
+    kb_ids: Optional[List[str]] = None
 ) -> List[dict]:
     """
     Search for chunks with vector similarity and metadata filtering.
@@ -167,7 +169,16 @@ def search_chunks(
     rid = _get_req_id()
     logger.info(f"[{rid}] search_chunks_started: mode={metadata_filter_mode}, k={retriever_top_k}")
     
-    qdrant_filter = build_qdrant_filter(metadata_filters)
+    # Merge explicit metadata filters with kb_ids filter
+    combined_filters = (metadata_filters or []).copy()
+    if kb_ids:
+        combined_filters.append({
+            "field": "kb_id",
+            "operator": "in",
+            "value": kb_ids
+        })
+    
+    qdrant_filter = build_qdrant_filter(combined_filters)
     
     if metadata_filter_mode == "hard":
         results = client.query_points(
@@ -473,7 +484,8 @@ def search_documents(
     query: str,
     limit: int = 50,
     metadata_filters: Optional[List[Dict[str, Any]]] = None,
-    metadata_filter_mode: str = "soft"
+    metadata_filter_mode: str = "soft",
+    kb_ids: Optional[List[str]] = None
 ) -> List[dict]:
     """
     Search for unique documents with metadata filtering.
@@ -487,7 +499,8 @@ def search_documents(
         retriever_top_k=limit * 5,
         metadata_filters=metadata_filters,
         metadata_filter_mode=metadata_filter_mode,
-        query_text=query
+        query_text=query,
+        kb_ids=kb_ids
     )
     
     unique_docs = {}

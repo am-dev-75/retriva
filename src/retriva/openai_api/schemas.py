@@ -75,10 +75,13 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str = Field(..., description="Model identifier (accepted but ignored)")
     messages: List[ChatMessage] = Field(..., min_length=1)
-    stream: bool = Field(False, description="Accepted but ignored (not yet supported)")
+    stream: bool = Field(False, description="Whether to stream the response")
     temperature: Optional[float] = None
     top_p: Optional[float] = None
-    user_metadata_filter: Optional[Dict[str, str]] = Field(None, description="Filter chunks by metadata")
+    kb_ids: List[str] = Field(default_factory=lambda: ["default"], description="Knowledge base IDs to search")
+    metadata_filters: Optional[List[dict]] = Field(default_factory=list, description="Advanced metadata filters (v2)")
+    metadata_filter_mode: str = Field("soft", description="Filtering mode (soft or hard)")
+    user_metadata_filter: Optional[Dict[str, str]] = Field(None, description="[DEPRECATED] Simple metadata filter")
 
 
 # ---------------------------------------------------------------------------

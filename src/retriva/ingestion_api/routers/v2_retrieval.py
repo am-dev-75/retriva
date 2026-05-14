@@ -67,7 +67,8 @@ async def search_documents(request: RetrievalRequest):
             metadata_filters=filters,
             metadata_filter_mode=request.metadata_filter_mode.value,
             rerank=request.rerank,
-            hybrid_selection=request.hybrid_selection
+            hybrid_selection=request.hybrid_selection,
+            kb_ids=request.kb_ids
         )
         
         duration_ms = int((time.time() - start_time) * 1000)

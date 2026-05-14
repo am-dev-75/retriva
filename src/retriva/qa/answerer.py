@@ -65,7 +65,7 @@ def _limit_chunks_by_citations(chunks: list[dict], max_citations: int) -> list[d
 
 
 
-def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft") -> list[dict]:
+def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft", kb_ids: Optional[List[str]] = None) -> list[dict]:
     """
     Run the full retrieval pipeline: vector search → rerank → hybrid select.
     """
@@ -77,7 +77,8 @@ def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_fi
         query=query, 
         top_k=retriever_top_k, 
         metadata_filters=metadata_filters,
-        metadata_filter_mode=metadata_filter_mode
+        metadata_filter_mode=metadata_filter_mode,
+        kb_ids=kb_ids
     )
 
     if profiler:
@@ -86,12 +87,12 @@ def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_fi
     return chunks
 
 
-def ask_question(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft") -> dict:
+def ask_question(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft", kb_ids: Optional[List[str]] = None) -> dict:
     logger.info(f"Processing question: {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
 
     profiler = Profiler.get_current()
-    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filters, metadata_filter_mode)
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filters, metadata_filter_mode, kb_ids=kb_ids)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
     logger.info(f"Final context: {len(chunks)} chunks from up to {settings.max_citations} sources.")
@@ -121,12 +122,12 @@ def ask_question(question: str, retriever_top_k: int = 20, metadata_filters: Opt
     return {"answer": answer_text, "retrieved_chunks": chunks, "grounding": grounding}
 
 
-def ask_question_streaming(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft"):
+def ask_question_streaming(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft", kb_ids: Optional[List[str]] = None):
     logger.info(f"Processing question (streaming): {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
 
     profiler = Profiler.get_current()
-    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filters, metadata_filter_mode)
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filters, metadata_filter_mode, kb_ids=kb_ids)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
@@ -183,7 +184,7 @@ def ask_question_streaming_without_retrieval(question: str):
                     yield delta.content
     return [], content_generator()
 
-async def ask_question_streaming_async(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft"):
+async def ask_question_streaming_async(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft", kb_ids: Optional[List[str]] = None):
     logger.info(f"Processing question (async streaming): {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
     
@@ -200,7 +201,8 @@ async def ask_question_streaming_async(question: str, retriever_top_k: int = 20,
         query=sanitized_question, 
         top_k=retriever_top_k, 
         metadata_filters=metadata_filters,
-        metadata_filter_mode=metadata_filter_mode
+        metadata_filter_mode=metadata_filter_mode,
+        kb_ids=kb_ids
     )
 
     if profiler:

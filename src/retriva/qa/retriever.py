@@ -26,7 +26,8 @@ def retrieve_top_chunks(
     query: str, 
     retriever_top_k: int = 20, 
     metadata_filters: Optional[List[Dict[str, Any]]] = None,
-    metadata_filter_mode: str = "soft"
+    metadata_filter_mode: str = "soft",
+    kb_ids: Optional[List[str]] = None
 ) -> List[Dict]:
     logger.debug(f"Retrieving top_{retriever_top_k} chunks for query (mode={metadata_filter_mode})...")
     embeddings = get_embeddings([query])
@@ -39,7 +40,8 @@ def retrieve_top_chunks(
         retriever_top_k=retriever_top_k, 
         metadata_filters=metadata_filters,
         metadata_filter_mode=metadata_filter_mode,
-        query_text=query
+        query_text=query,
+        kb_ids=kb_ids
     )
     for i, res in enumerate(results):
         logger.debug(f"  Chunk {i+1}: {res.get('page_title')} (path: {res.get('source_path')})")
@@ -117,7 +119,8 @@ class DefaultRetriever:
         metadata_filters: Optional[List[Dict[str, Any]]] = None,
         metadata_filter_mode: str = "soft",
         rerank: bool = True,
-        hybrid_selection: bool = True
+        hybrid_selection: bool = True,
+        kb_ids: Optional[List[str]] = None
     ) -> List[Dict]:
         """Run the full retrieval pipeline: vector search -> rerank -> diversity -> hybrid select."""
 
@@ -130,7 +133,8 @@ class DefaultRetriever:
             query,
             retriever_top_k=fetch_k,
             metadata_filters=metadata_filters,
-            metadata_filter_mode=metadata_filter_mode
+            metadata_filter_mode=metadata_filter_mode,
+            kb_ids=kb_ids
         )
 
         if not chunks:

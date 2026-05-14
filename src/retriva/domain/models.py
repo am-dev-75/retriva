@@ -27,6 +27,7 @@ class ChunkMetadata(BaseModel):
     language: str = "en"
     image_path: Optional[str] = None
     ingestion_timestamp: Optional[str] = None
+    kb_id: str = "default"
     user_metadata: Optional[Dict[str, str]] = None
     # --- Deduplication fields (v2, optional for backward compat) ---
     content_hash: Optional[str] = None
@@ -56,6 +57,7 @@ class ParsedDocument(BaseModel):
     chunks: List[Chunk] = Field(default_factory=list)
     images: List[ImageContext] = Field(default_factory=list)
     user_metadata: Optional[Dict[str, str]] = None
+    kb_id: str = "default"
     # --- Deduplication fields (v2, optional for backward compat) ---
     doc_id: Optional[str] = None
     content_hash: Optional[str] = None

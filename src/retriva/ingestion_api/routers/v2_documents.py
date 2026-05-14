@@ -250,6 +250,7 @@ def process_document_v2(
         normalized = records_to_parsed_document(records, source_uri, user_metadata, language, page_title)
         # Attach dedup fields to the ParsedDocument so the chunker can propagate them
         normalized.doc_id = doc_id
+        normalized.kb_id = kb_id
         normalized.content_hash = content_hash
         normalized.source_paths = source_paths or [source_uri]
         normalized.content_text = normalize_text(normalized.content_text)
@@ -447,7 +448,8 @@ async def search_documents_v2(request: DocumentSearchRequest):
             query=request.query,
             limit=request.limit,
             metadata_filters=filters,
-            metadata_filter_mode=request.metadata_filter_mode.value
+            metadata_filter_mode=request.metadata_filter_mode.value,
+            kb_ids=request.kb_ids
         )
         
         duration_ms = int((time.time() - start_time) * 1000)
