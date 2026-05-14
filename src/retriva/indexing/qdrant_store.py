@@ -194,79 +194,65 @@ def search_chunks(
         logger.info(f"[{rid}] hard_recall_completed: results={len(output)}")
         return output
     else:
-        # Soft mode: Multi-recall merge
+        # Soft mode: Multi-recall merge (Semantic-First)
         
-        # 1. Semantic Recall
-        semantic_results = client.query_points(
+        # 1. Global Semantic Recall (no filters)
+        # Ensures highly relevant documents appear even if they don't match the metadata
+        semantic_global = client.query_points(
             collection_name=COLLECTION_NAME,
             query=query_vector,
-            limit=retriever_top_k * 2,
+            limit=retriever_top_k,
             with_payload=True
         )
         
-        # 2. Metadata Recall (if filters exist)
-        metadata_results = []
+        # 2. Metadata-Constrained Semantic Recall
+        # Ensures relevant documents matching the metadata are prioritized/recalled
+        semantic_metadata = []
         if qdrant_filter:
             meta_res = client.query_points(
                 collection_name=COLLECTION_NAME,
+                query=query_vector,
                 query_filter=qdrant_filter,
                 limit=retriever_top_k,
                 with_payload=True
             )
-            metadata_results = meta_res.points
+            semantic_metadata = meta_res.points
 
-        # 3. Keyword/Field Recall (Title/Path match)
-        keyword_results = []
-        if query_text:
-            # We look for keywords in page_title and source_path
-            keyword_filter = Filter(
-                should=[
-                    FieldCondition(key="page_title", match=MatchText(text=query_text)),
-                    FieldCondition(key="source_path", match=MatchText(text=query_text)),
-                    FieldCondition(key="text", match=MatchText(text=query_text)),
-                ]
-            )
-            kw_res = client.query_points(
-                collection_name=COLLECTION_NAME,
-                query_filter=keyword_filter,
-                limit=retriever_top_k,
-                with_payload=True
-            )
-            keyword_results = kw_res.points
-
-        # 4. Merge and deduplicate
+        # 3. Merge and deduplicate
         all_points = {} # id -> (point, reasons)
-        for hit in semantic_results.points:
+        
+        # Base reasons for hard mode fields
+        meta_reasons = []
+        if metadata_filters:
+            for f in metadata_filters:
+                meta_reasons.append(f"metadata:{f['field']}")
+
+        for hit in semantic_global.points:
             all_points[hit.id] = {"hit": hit, "reasons": ["semantic"]}
             
-        for hit in metadata_results:
+        for hit in semantic_metadata:
+            reasons = ["semantic"] + meta_reasons
             if hit.id in all_points:
-                if "metadata" not in all_points[hit.id]["reasons"]:
-                    all_points[hit.id]["reasons"].append("metadata")
+                # Merge reasons
+                for r in reasons:
+                    if r not in all_points[hit.id]["reasons"]:
+                        all_points[hit.id]["reasons"].append(r)
             else:
-                all_points[hit.id] = {"hit": hit, "reasons": ["metadata"]}
-                
-        for hit in keyword_results:
-            if hit.id in all_points:
-                if "keyword" not in all_points[hit.id]["reasons"]:
-                    all_points[hit.id]["reasons"].append("keyword")
-            else:
-                all_points[hit.id] = {"hit": hit, "reasons": ["keyword"]}
+                all_points[hit.id] = {"hit": hit, "reasons": reasons}
 
-        # 5. Scoring and match reasons
+        # 4. Scoring and match reasons
         scored_results = []
         for p_id, info in all_points.items():
             hit = info["hit"]
             reasons = info["reasons"]
             
-            # Base score is semantic similarity if available, else 0
-            score = hit.score if "semantic" in reasons else 0.0
+            # Base score is the semantic similarity from Qdrant
+            score = hit.score
             
-            # Apply boosts
-            if "metadata" in reasons:
-                score += 2.0
-            if "keyword" in reasons:
-                score += 0.1
+            # Apply small metadata boost if it matched the filters
+            is_metadata_match = any(r.startswith("metadata:") for r in reasons)
+            if is_metadata_match:
+                score += settings.retrieval_metadata_boost
                 
             # Store match reasons and score in payload for propagation
             payload = hit.payload.copy()
@@ -275,18 +261,18 @@ def search_chunks(
             
             scored_results.append({
                 "payload": payload,
-                "score": score,
-                "match_reasons": reasons
+                "score": score
             })
             
-        # 6. Sort and limit
+        # 5. Sort and limit
+        # (Final sorting and top_k limiting happens in retriever.py, but we sort here for logging)
         scored_results.sort(key=lambda x: x["score"], reverse=True)
         final_results = scored_results[:retriever_top_k]
         
         logger.info(
-            f"[{rid}] soft_recall_completed: semantic={len(semantic_results.points)}, "
-            f"metadata={len(metadata_results)}, keyword={len(keyword_results)}, "
-            f"merged={len(scored_results)}, final={len(final_results)}"
+            f"[{rid}] soft_recall_completed: global={len(semantic_global.points)}, "
+            f"constrained={len(semantic_metadata)}, merged={len(scored_results)}, "
+            f"final={len(final_results)}"
         )
         
         return [res["payload"] for res in final_results]

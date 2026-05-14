@@ -113,8 +113,8 @@ def test_retrieval_fetch_k_is_increased(mock_embeddings, mock_search, mock_clien
 @patch("retriva.qa.retriever.get_client")
 @patch("retriva.qa.retriever.search_chunks")
 @patch("retriva.qa.retriever.get_embeddings")
-def test_retrieval_soft_mode_no_diversity(mock_embeddings, mock_search, mock_client, mock_chunks):
-    """Verify that soft mode does not apply diversity filtering (per current requirement)."""
+def test_retrieval_soft_mode_now_has_diversity(mock_embeddings, mock_search, mock_client, mock_chunks):
+    """Verify that soft mode now ALSO applies diversity filtering."""
     all_chunks = mock_chunks("large_doc.pdf", 10)
     mock_search.return_value = all_chunks
     mock_embeddings.return_value = [[0.1] * 1024]
@@ -131,6 +131,6 @@ def test_retrieval_soft_mode_no_diversity(mock_embeddings, mock_search, mock_cli
         hybrid_selection=False
     )
     
-    # In soft mode, diversity is not applied yet, so we get all 5 from the same doc
-    assert len(results) == 5
+    # Now in soft mode, diversity IS applied, so we get capped at 3
+    assert len(results) == 3
     assert all(r["doc_id"] == "large_doc.pdf" for r in results)

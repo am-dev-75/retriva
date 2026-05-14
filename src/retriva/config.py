@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     retriever_top_k: int = 20
     retrieval_fetch_k_multiplier: int = 5
     retrieval_max_chunks_per_doc: int = 3
+    retrieval_metadata_boost: float = 0.1
     
     # Retrieval re-ranking (two-stage)
     enable_retrieval_reranking: bool = True

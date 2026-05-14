@@ -122,12 +122,9 @@ class DefaultRetriever:
         """Run the full retrieval pipeline: vector search -> rerank -> diversity -> hybrid select."""
 
         # 1. Broad retrieval
-        # In hard mode, we fetch more candidates than top_k to allow diversity filtering
-        if metadata_filter_mode == "hard":
-            fetch_k = max(top_k * settings.retrieval_fetch_k_multiplier, 50)
-            logger.info(f"Retrieval diversity: hard mode enabled, fetching {fetch_k} candidates for top_{top_k}")
-        else:
-            fetch_k = top_k
+        # Fetch more candidates than top_k to allow diversity filtering
+        fetch_k = max(top_k * settings.retrieval_fetch_k_multiplier, 50)
+        logger.info(f"Retrieval diversity: mode={metadata_filter_mode}, fetching {fetch_k} candidates for top_{top_k}")
 
         chunks = retrieve_top_chunks(
             query,
@@ -147,11 +144,9 @@ class DefaultRetriever:
             chunks = _rerank_if_enabled(query, chunks, enabled=rerank)
 
         # B. Diversity Filtering (Per-document cap)
-        # We only apply this in hard mode for now as requested
-        if metadata_filter_mode == "hard":
-            max_per_doc = settings.retrieval_max_chunks_per_doc
-            chunks = _apply_diversity_filter(chunks, max_per_doc)
-            logger.info(f"Retrieval diversity: applied cap={max_per_doc}, pool reduced to {len(chunks)}")
+        max_per_doc = settings.retrieval_max_chunks_per_doc
+        chunks = _apply_diversity_filter(chunks, max_per_doc)
+        logger.info(f"Retrieval diversity: applied cap={max_per_doc}, pool reduced to {len(chunks)}")
 
         # C. Hybrid Retrieval Selection
         if hybrid_selection:
