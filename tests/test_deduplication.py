@@ -88,17 +88,17 @@ def _init_store(store_instance, catalog_path):
             json.dump({"records": []}, f)
 
 
-FILE_CONTENT = b"Hello, this is the canonical content of costs.png for dedup tests."
+FILE_CONTENT = b"Hello, this is the canonical content of costs.txt for dedup tests."
 
 
-def _upload(client, content=FILE_CONTENT, source_path="costs.png",
+def _upload(client, content=FILE_CONTENT, source_path="costs.txt",
             metadata=None, kb_id="default"):
     data = {"source_path": source_path, "kb_id": kb_id}
     if metadata:
         data["user_metadata"] = json.dumps(metadata)
     return client.post(
         "/api/v2/documents/upload",
-        files={"file": ("costs.png", content, "text/plain")},
+        files={"file": ("costs.txt", content, "text/plain")},
         data=data,
     )
 
@@ -135,7 +135,7 @@ def test_case_a_new_file(mock_get_client, mock_upsert):
     chunk = chunks[0]
     assert chunk.metadata.content_hash == data["content_hash"]
     assert chunk.metadata.content_hash_algorithm == "sha256"
-    assert "costs.png" in (chunk.metadata.source_paths or [])
+    assert "costs.txt" in (chunk.metadata.source_paths or [])
 
 
 # ---------------------------------------------------------------------------
@@ -183,12 +183,12 @@ def test_case_c_same_file_different_path(mock_get_client, mock_update_payload, m
     from retriva.ingestion_api.main import app
 
     with TestClient(app) as client:
-        r1 = _upload(client, source_path="prj_apollo/costs.png")
+        r1 = _upload(client, source_path="prj_apollo/costs.txt")
         assert r1.status_code == 202
 
         mock_upsert.reset_mock()
 
-        r2 = _upload(client, source_path="costs.png")
+        r2 = _upload(client, source_path="costs.txt")
 
     assert r2.status_code == 202
     data = r2.json()
@@ -201,8 +201,8 @@ def test_case_c_same_file_different_path(mock_get_client, mock_update_payload, m
     patch_payload = mock_update_payload.call_args[0][2]  # payload_patch arg
     assert "source_paths" in patch_payload
     paths = patch_payload["source_paths"]
-    assert "prj_apollo/costs.png" in paths
-    assert "costs.png" in paths
+    assert "prj_apollo/costs.txt" in paths
+    assert "costs.txt" in paths
 
     # No new Qdrant points
     mock_upsert.assert_not_called()
@@ -344,14 +344,14 @@ def test_merge_metadata_no_change():
 
 def test_merge_source_paths_new_path():
     from retriva.ingestion.dedup import merge_source_paths
-    merged, changed = merge_source_paths(["a/costs.png"], "costs.png", "d", "k")
-    assert "costs.png" in merged
-    assert "a/costs.png" in merged
+    merged, changed = merge_source_paths(["a/costs.txt"], "costs.txt", "d", "k")
+    assert "costs.txt" in merged
+    assert "a/costs.txt" in merged
     assert changed is True
 
 
 def test_merge_source_paths_duplicate():
     from retriva.ingestion.dedup import merge_source_paths
-    merged, changed = merge_source_paths(["costs.png"], "costs.png", "d", "k")
-    assert merged == ["costs.png"]
+    merged, changed = merge_source_paths(["costs.txt"], "costs.txt", "d", "k")
+    assert merged == ["costs.txt"]
     assert changed is False
