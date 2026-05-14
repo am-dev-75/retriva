@@ -38,7 +38,16 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Respo
 
 from retriva.config import settings
 from retriva.domain.models import CanonicalRecord, ParsedDocument
-from retriva.indexing.qdrant_store import get_client, upsert_chunks, delete_chunks_by_source_path, delete_chunks_by_metadata, COLLECTION_NAME, list_documents as list_documents_store, count_documents as count_documents_store
+from retriva.indexing.qdrant_store import (
+    get_client, upsert_chunks, delete_chunks_by_source_path,
+    delete_chunks_by_metadata, update_payload_by_doc_id, COLLECTION_NAME,
+    list_documents as list_documents_store,
+    count_documents as count_documents_store,
+)
+from retriva.ingestion.dedup import (
+    DeduplicationStore, compute_content_hash, derive_doc_id,
+    merge_metadata, merge_source_paths,
+)
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from retriva.ingestion.normalize import normalize_text
 from retriva.ingestion_api.job_manager import CancellationError, JobManager
@@ -51,9 +60,12 @@ from retriva.ingestion_api.schemas_v2 import (
     DocumentCountResponse,
     DocumentResponse,
     DocumentFilterRequest,
+    DocumentSearchRequest,
 )
 from retriva.logger import get_logger
 from retriva.registry import CapabilityRegistry
+from retriva.profiler import Profiler
+import time
 
 # Import modules to trigger default registrations
 import retriva.ingestion.chunker              # noqa: F401 — registers DefaultChunker
@@ -153,135 +165,72 @@ def process_document_v2(
     parser_hint: Optional[str],
     job_id: str,
     temp_path: Optional[str] = None,
+    doc_id: Optional[str] = None,
+    content_hash: Optional[str] = None,
+    kb_id: str = "default",
+    source_paths: Optional[List[str]] = None,
 ):
-    """Execute the 6-stage v2 ingestion pipeline in a background thread.
-
-    Stages: DETECTING → PREPROCESSING → PARSING → NORMALIZATION → CHUNKING → INDEXING
-    """
+    """Execute the 6-stage v2 ingestion pipeline in a background thread."""
     manager = JobManager()
     manager.start_job(job_id)
     cancel_check = lambda: manager.is_cancel_requested(job_id)
     parse_source = temp_path or source_uri
-    ocr_temp_path = None  # Track OCR output for cleanup
+    ocr_temp_path = None
+    dedup_store = DeduplicationStore()
 
     try:
         registry = CapabilityRegistry()
 
-        # ── Stage 1: DETECTING ───────────────────────────────────────
         manager.advance_stage(job_id, JobStage.DETECTING.value)
-
         tika = registry.get_instance("tika_client")
         if tika.health_check():
             detection = tika.detect(parse_source)
-            logger.debug(
-                f"Job {job_id}: Tika detected type={detection.content_type}, "
-                f"scanned={detection.is_scanned}"
-            )
         else:
-            # Tika unavailable — fall back to extension-based detection
             from retriva.ingestion.parser_router import DefaultParserRouter
             fallback_router = DefaultParserRouter()
-            detected_mime = fallback_router.detect_content_type(
-                source_uri, hint=content_type
-            )
+            detected_mime = fallback_router.detect_content_type(source_uri, hint=content_type)
             from retriva.ingestion.tika_client import TikaDetectionResult
             detection = TikaDetectionResult(content_type=detected_mime)
-            logger.warning(
-                f"Job {job_id}: Tika unavailable, using extension-based detection: "
-                f"{detected_mime}"
-            )
+            logger.warning(f"Job {job_id}: Tika unavailable, fallback: {detected_mime}")
 
-        # Override with explicit content_type hint if provided
         if content_type:
             detection.content_type = content_type
-
-        # Validate source exists for local paths
         if not temp_path and not os.path.exists(parse_source):
             raise FileNotFoundError(f"Source not found: {parse_source}")
-
         if cancel_check():
             raise CancellationError("Job cancelled during detection")
 
-        # ── Stage 2: PREPROCESSING ───────────────────────────────────
         manager.advance_stage(job_id, JobStage.PREPROCESSING.value)
-
         preprocessor = registry.get_instance("ocrmypdf_preprocessor")
         if preprocessor.needs_ocr(detection):
             ocr_fd, ocr_temp_path = tempfile.mkstemp(suffix=".pdf")
             os.close(ocr_fd)
-            success = preprocessor.preprocess(
-                parse_source, ocr_temp_path, cancel_check
-            )
-            if success:
+            if preprocessor.preprocess(parse_source, ocr_temp_path, cancel_check):
                 parse_source = ocr_temp_path
-                logger.info(f"Job {job_id}: using OCR'd PDF for parsing")
-            else:
-                logger.warning(
-                    f"Job {job_id}: OCR preprocessing failed, "
-                    f"continuing with original"
-                )
-
         if cancel_check():
             raise CancellationError("Job cancelled during preprocessing")
 
-        # ── Stage 3: PARSING ─────────────────────────────────────────
         manager.advance_stage(job_id, JobStage.PARSING.value)
-
         if detection.content_type.startswith("image/"):
-            logger.info(f"Job {job_id}: file is a standalone image, bypassing primary parser.")
             parser_key = "v2_image_handler"
-            records = [
-                CanonicalRecord(
-                    document_id=source_uri,
-                    element_type="image",
-                    text="",
-                    source_uri=source_uri,
-                    parser_name="v2_image_handler",
-                    image_path=parse_source,
-                )
-            ]
+            records = [CanonicalRecord(
+                document_id=source_uri, element_type="image", text="",
+                source_uri=source_uri, parser_name="v2_image_handler",
+                image_path=parse_source,
+            )]
         else:
             parser_key = f"parser:{parser_hint}" if parser_hint else f"parser:{settings.v2_primary_parser}"
             try:
                 parser = registry.get_instance(parser_key)
             except KeyError:
-                if parser_hint:
-                    logger.warning(
-                        f"Job {job_id}: unknown parser_hint '{parser_hint}', "
-                        f"falling back to '{settings.v2_primary_parser}'"
-                    )
-                    try:
-                        parser = registry.get_instance(
-                            f"parser:{settings.v2_primary_parser}"
-                        )
-                    except KeyError:
-                        logger.warning(
-                            f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
-                            f"not available, using built-in default"
-                        )
-                        parser = registry.get_instance("parser:default")
-                else:
-                    logger.warning(
-                        f"Job {job_id}: primary parser '{settings.v2_primary_parser}' "
-                        f"not available, using built-in default"
-                    )
-                    parser = registry.get_instance("parser:default")
-
-            records: List[CanonicalRecord] = parser.parse(
-                parse_source, detection.content_type, cancel_check
-            )
+                parser = registry.get_instance("parser:default")
+            records: List[CanonicalRecord] = parser.parse(parse_source, detection.content_type, cancel_check)
 
         if cancel_check():
             raise CancellationError("Job cancelled after parsing")
+        logger.info(f"Job {job_id}: parser '{parser_key}' produced {len(records)} records")
 
-        logger.info(
-            f"Job {job_id}: parser '{parser_key}' produced {len(records)} records"
-        )
-
-        # ── Stage 4: NORMALIZATION ───────────────────────────────────
         manager.advance_stage(job_id, JobStage.NORMALIZATION.value)
-
-        # 4a. VLM enrichment for image records
         try:
             vlm = registry.get_instance("vlm_describer")
             for record in records:
@@ -293,62 +242,52 @@ def process_document_v2(
                         description = vlm.describe(image_file)
                         if description:
                             record.text = description
-                            record.confidence = 1.0
-                            logger.debug(f"VLM enriched image: {image_file.name}")
         except KeyError:
-            logger.debug("No vlm_describer registered — skipping VLM enrichment")
+            pass
 
-        # 4b. Derive title from Tika metadata or parser output
-        page_title = (
-            detection.metadata.get("dc:title", "")
-            or detection.metadata.get("title", "")
-        )
-
-        # 4c. Convert CanonicalRecords → ParsedDocument
+        page_title = detection.metadata.get("dc:title", "") or detection.metadata.get("title", "")
         language = detection.language or "en"
-        normalized = records_to_parsed_document(
-            records, source_uri, user_metadata, language, page_title
-        )
-
-        # 4d. Normalize text content
+        normalized = records_to_parsed_document(records, source_uri, user_metadata, language, page_title)
+        # Attach dedup fields to the ParsedDocument so the chunker can propagate them
+        normalized.doc_id = doc_id
+        normalized.content_hash = content_hash
+        normalized.source_paths = source_paths or [source_uri]
         normalized.content_text = normalize_text(normalized.content_text)
 
         if not normalized.content_text.strip() and not normalized.images:
-            logger.warning(
-                f"Job {job_id}: empty content and no images after normalization — skipping."
-            )
+            logger.warning(f"Job {job_id}: empty content after normalization — skipping.")
             manager.complete_job(job_id)
             return
-
         if cancel_check():
             raise CancellationError("Job cancelled during normalization")
 
-        # ── Stage 5: CHUNKING ────────────────────────────────────────
         manager.advance_stage(job_id, JobStage.CHUNKING.value)
         chunks = registry.get_instance("chunker").create_chunks(normalized)
-
         if cancel_check():
             raise CancellationError("Job cancelled during chunking")
 
-        # ── Stage 6: INDEXING ────────────────────────────────────────
         manager.advance_stage(job_id, JobStage.INDEXING.value)
         client = get_client()
         upsert_chunks(client, chunks, cancel_check=cancel_check)
 
+        # Finalise the catalog record
+        if doc_id:
+            try:
+                dedup_store.finalize_record(doc_id, chunk_count=len(chunks))
+            except KeyError:
+                pass  # record may not exist for non-upload paths
+
         manager.complete_job(job_id)
-        logger.info(
-            f"Job {job_id} completed for '{source_uri}' "
-            f"({len(chunks)} chunks indexed)"
-        )
+        logger.info(f"new_document_ingestion_started: job={job_id}, doc_id={doc_id}, "
+                    f"kb_id={kb_id}, content_hash={content_hash}, source_path={source_uri}, "
+                    f"chunks={len(chunks)}, deduplicated=false, metadata_updated=false")
 
     except CancellationError:
         manager.mark_cancelled(job_id)
-        logger.info(f"Job {job_id} cancelled during v2 processing")
     except Exception as e:
         manager.fail_job(job_id, str(e))
         logger.error(f"Job {job_id} failed: {e}")
     finally:
-        # Clean up all temp files
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
         if ocr_temp_path and os.path.exists(ocr_temp_path):
@@ -481,6 +420,57 @@ async def get_document(doc_id: str):
         )
 
 
+@router.post("/search", response_model=DocumentListResponse)
+async def search_documents_v2(request: DocumentSearchRequest):
+    """
+    Search for unique documents based on semantic query and metadata filters.
+    Returns document-level results with match reasons.
+    """
+    start_time = time.time()
+    
+    try:
+        # Start profiler for structured logging and request_id propagation
+        profiler = Profiler.start_request()
+        
+        logger.info(
+            f"[{profiler.request_id}] document_search_requested: query='{request.query[:50]}...', "
+            f"mode={request.metadata_filter_mode}, "
+            f"filters_count={len(request.metadata_filters)}"
+        )
+        
+        client = get_client()
+        filters = [f.model_dump() for f in request.metadata_filters]
+        
+        from retriva.indexing.qdrant_store import search_documents
+        docs = search_documents(
+            client=client,
+            query=request.query,
+            limit=request.limit,
+            metadata_filters=filters,
+            metadata_filter_mode=request.metadata_filter_mode.value
+        )
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        profiler.mark_phase("document_search_finished")
+        profiler.finalize()
+        
+        logger.info(
+            f"[{profiler.request_id}] document_search_completed: results={len(docs)}, "
+            f"duration_ms={duration_ms}"
+        )
+        
+        return DocumentListResponse(
+            documents=[DocumentResponse(**d) for d in docs],
+            total=len(docs)
+        )
+    except Exception as e:
+        logger.error(f"Error searching documents: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
 
 @router.post(
     "",
@@ -521,35 +511,136 @@ async def upload_document_v2(
     source_path: str = Form(...),
     content_type: str = Form(None),
     user_metadata: str = Form(None),
+    kb_id: str = Form("default"),
 ) -> IngestResponseV2:
-    """Generic multi-parser ingestion (multipart file upload)."""
-    logger.debug(f"v2 upload request: filename={file.filename}")
+    """Multipart file upload with content-hash deduplication.
 
-    # Deserialise JSON-encoded user_metadata from form field
+    On first upload: full 6-stage pipeline, returns status='accepted'.
+    On duplicate (same kb_id + SHA-256): merges metadata/paths, patches
+    Qdrant payloads, returns status='already_exists' or 'metadata_updated'.
+    """
+    # -- 1. Parse metadata --------------------------------------------------
     parsed_metadata = None
     if user_metadata:
         try:
             parsed_metadata = _json.loads(user_metadata)
         except _json.JSONDecodeError:
-            raise HTTPException(
-                status_code=422,
-                detail=[{"field": "user_metadata", "msg": "Invalid JSON in user_metadata form field"}],
-            )
+            raise HTTPException(status_code=422, detail=[{"field": "user_metadata", "msg": "Invalid JSON"}])
         try:
             validate_user_metadata(parsed_metadata)
         except UserMetadataValidationError as e:
             raise HTTPException(status_code=422, detail=e.details)
 
+    # -- 2. Read bytes + compute hash BEFORE saving to temp -----------------
+    file_bytes = await file.read()
+    content_hash = compute_content_hash(file_bytes)
+    hex_digest = content_hash.split(":", 1)[1]  # strip "sha256:"
+    doc_id = derive_doc_id(kb_id, hex_digest)
+    content_size = len(file_bytes)
+    filename = file.filename or Path(source_path).name
+
+    logger.info(
+        f"file_hash_computed: kb_id={kb_id}, doc_id={doc_id}, "
+        f"content_hash={content_hash}, source_path={source_path}, "
+        f"filename={filename}, size={content_size}"
+    )
+
+    # -- 3. Dedup lookup ----------------------------------------------------
+    dedup_store = DeduplicationStore()
+    existing = dedup_store.get_by_hash(kb_id, content_hash)
+
+    if existing is not None:
+        # ── Duplicate path ──────────────────────────────────────────────────
+        logger.info(
+            f"duplicate_document_detected: doc_id={doc_id}, kb_id={kb_id}, "
+            f"content_hash={content_hash}, source_path={source_path}, "
+            f"deduplicated=true"
+        )
+
+        merged_meta, meta_changed = merge_metadata(
+            existing.user_metadata, parsed_metadata, doc_id, kb_id
+        )
+        merged_paths, paths_changed = merge_source_paths(
+            existing.source_paths, source_path, doc_id, kb_id
+        )
+        any_changed = meta_changed or paths_changed
+
+        if any_changed:
+            dedup_store.update_record(
+                doc_id=doc_id,
+                merged_metadata=merged_meta,
+                merged_source_paths=merged_paths,
+            )
+            # Patch Qdrant payloads (no re-embedding)
+            from datetime import datetime, timezone
+            now_iso = datetime.now(timezone.utc).isoformat()
+            client = get_client()
+            update_payload_by_doc_id(client, doc_id, {
+                "user_metadata": merged_meta,
+                "source_paths": merged_paths,
+                "content_hash": content_hash,
+                "content_hash_algorithm": "sha256",
+                "metadata_updated_at": now_iso,
+            })
+            logger.info(
+                f"duplicate_document_ingestion_skipped: doc_id={doc_id}, kb_id={kb_id}, "
+                f"content_hash={content_hash}, source_path={source_path}, "
+                f"deduplicated=true, metadata_updated=true"
+            )
+            return IngestResponseV2(
+                status="metadata_updated",
+                message="Document already exists; metadata and source paths were updated.",
+                doc_id=doc_id,
+                content_hash=content_hash,
+                deduplicated=True,
+                chunks_reused=True,
+                metadata_updated=True,
+            )
+        else:
+            logger.info(
+                f"duplicate_document_ingestion_skipped: doc_id={doc_id}, kb_id={kb_id}, "
+                f"content_hash={content_hash}, source_path={source_path}, "
+                f"deduplicated=true, metadata_updated=false"
+            )
+            return IngestResponseV2(
+                status="already_exists",
+                message="Document already exists in this knowledge base.",
+                doc_id=doc_id,
+                content_hash=content_hash,
+                deduplicated=True,
+                chunks_reused=True,
+                metadata_updated=False,
+            )
+
+    # ── New document path ───────────────────────────────────────────────────
+    from retriva.domain.models import DocRecord
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    record = DocRecord(
+        doc_id=doc_id,
+        kb_id=kb_id,
+        content_hash=content_hash,
+        content_size=content_size,
+        mime_type=content_type,
+        filename=filename,
+        source_paths=[source_path],
+        user_metadata=parsed_metadata,
+        ingestion_status="pending",
+        created_at=now_iso,
+        updated_at=now_iso,
+    )
+    dedup_store.create_record(record)
+
     manager = JobManager()
     job = manager.create_job(source=source_path, job_type="v2_upload")
 
-    # Save the uploaded file to a temporary location
-    suffix = os.path.splitext(file.filename or "")[1] or ""
+    # Save bytes to temp file
+    suffix = os.path.splitext(filename)[1] or ""
     temp_fd, temp_path = tempfile.mkstemp(suffix=suffix)
     os.close(temp_fd)
-
     with open(temp_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(file_bytes)
 
     background_tasks.add_task(
         process_document_v2,
@@ -559,12 +650,26 @@ async def upload_document_v2(
         None,  # parser_hint
         job.id,
         temp_path=temp_path,
+        doc_id=doc_id,
+        content_hash=content_hash,
+        kb_id=kb_id,
+        source_paths=[source_path],
     )
 
+    logger.info(
+        f"new_document_ingestion_started: doc_id={doc_id}, kb_id={kb_id}, "
+        f"content_hash={content_hash}, source_path={source_path}, "
+        f"deduplicated=false, metadata_updated=false"
+    )
     return IngestResponseV2(
         status="accepted",
-        message=f"File '{file.filename}' accepted for processing",
+        message=f"File '{filename}' accepted for processing.",
         job_id=job.id,
+        doc_id=doc_id,
+        content_hash=content_hash,
+        deduplicated=False,
+        chunks_reused=False,
+        metadata_updated=False,
     )
 
 

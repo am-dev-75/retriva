@@ -97,7 +97,7 @@ def create_image_chunks(document: ParsedDocument, ingestion_timestamp: str = Non
             doc_id=document.canonical_doc_id,
             source_path=document.source_path,
             page_title=document.page_title,
-            section_path="", 
+            section_path="",
             chunk_id=chunk_id,
             chunk_index=idx,
             chunk_type="image",
@@ -105,6 +105,9 @@ def create_image_chunks(document: ParsedDocument, ingestion_timestamp: str = Non
             image_path=img.src,
             ingestion_timestamp=ingestion_timestamp,
             user_metadata=document.user_metadata,
+            content_hash=document.content_hash,
+            content_hash_algorithm="sha256" if document.content_hash else None,
+            source_paths=document.source_paths,
         )
         
         chunks.append(Chunk(text=text, metadata=meta))
@@ -134,16 +137,19 @@ def create_chunks(document: ParsedDocument) -> List[Chunk]:
     for idx, text in enumerate(final_texts):
         chunk_id = hashlib.md5(f"{document.canonical_doc_id}_{idx}".encode("utf-8")).hexdigest()
         meta = ChunkMetadata(
-            doc_id=document.canonical_doc_id,
+            doc_id=document.doc_id or document.canonical_doc_id,
             source_path=document.source_path,
             page_title=document.page_title,
-            section_path="", 
+            section_path="",
             chunk_id=chunk_id,
             chunk_index=idx,
             chunk_type="text",
             language=document.language,
             ingestion_timestamp=ingestion_timestamp,
             user_metadata=document.user_metadata,
+            content_hash=document.content_hash,
+            content_hash_algorithm="sha256" if document.content_hash else None,
+            source_paths=document.source_paths,
         )
         
         chunk = Chunk(text=text, metadata=meta)

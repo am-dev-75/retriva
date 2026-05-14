@@ -18,7 +18,7 @@ from retriva.qa.grounding import validate_grounding
 from retriva.registry import CapabilityRegistry
 from retriva.logger import get_logger
 from retriva.profiler import Profiler
-from typing import Optional, Dict
+from typing import Any, Dict, List, Optional
 
 # Import modules to trigger default registrations
 import retriva.qa.retriever        # noqa: F401 — registers DefaultRetriever
@@ -63,95 +63,35 @@ def _limit_chunks_by_citations(chunks: list[dict], max_citations: int) -> list[d
     return limited_chunks
 
 
-def _rerank_if_enabled(query: str, chunks: list[dict]) -> list[dict]:
-    """
-    Apply two-stage re-ranking if enabled in settings.
-
-    1. Slice candidates to ``retrieval_rerank_candidates``.
-    2. Call the registered reranker with ``retrieval_rerank_top_n``.
-
-    If disabled, return chunks unchanged.
-    """
-    if not settings.enable_retrieval_reranking:
-        logger.debug("Re-ranking disabled, using vector-search order.")
-        return chunks
-
-    # Candidate selection: limit what enters the reranker
-    candidates = settings.retrieval_rerank_candidates
-    if 0 < candidates < len(chunks):
-        logger.debug(
-            f"Candidate selection: {len(chunks)} → {candidates} "
-            f"(RETRIEVAL_RERANK_CANDIDATES={candidates})"
-        )
-        chunks = chunks[:candidates]
-
-    registry = CapabilityRegistry()
-    reranker = registry.get_instance("reranker")
-    return reranker.rerank(query, chunks, settings.retrieval_rerank_top_n)
 
 
-def _hybrid_select_if_enabled(
-    reranked: list[dict],
-    vector_top: list[dict],
-) -> list[dict]:
-    """
-    Apply hybrid retrieval selection if both reranking and hybrid selection
-    are enabled.  Merges top-M reranked results with top-L vector-search
-    results to recover implicit evidence.
-
-    If either feature is disabled, return *reranked* unchanged.
-    """
-    if not settings.enable_retrieval_reranking:
-        return reranked
-    if not settings.enable_hybrid_retrieval_selection:
-        logger.debug("Hybrid selection disabled, using reranked set only.")
-        return reranked
-
-    registry = CapabilityRegistry()
-    selector = registry.get_instance("hybrid_selector")
-    return selector.select(
-        reranked,
-        vector_top,
-        keep_m=settings.hybrid_rerank_keep_top_m,
-        keep_l=settings.hybrid_vector_keep_top_l,
-    )
-
-
-def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_filter: Optional[Dict[str, str]] = None) -> list[dict]:
+def _retrieve_and_select(query: str, retriever_top_k: int, profiler, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft") -> list[dict]:
     """
     Run the full retrieval pipeline: vector search → rerank → hybrid select.
-
-    Returns the final chunk list ready for context budgeting.
     """
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    chunks = retriever.retrieve(query, top_k=retriever_top_k, metadata_filter=metadata_filter)
+    
+    # Use the new centralized retrieve method
+    chunks = retriever.retrieve(
+        query=query, 
+        top_k=retriever_top_k, 
+        metadata_filters=metadata_filters,
+        metadata_filter_mode=metadata_filter_mode
+    )
 
     if profiler:
-        profiler.mark_phase("retrieval_vector_search_complete")
-
-    # Preserve original vector order for hybrid selection
-    vector_top = chunks[:]
-
-    chunks = _rerank_if_enabled(query, chunks)
-
-    if profiler:
-        profiler.mark_phase("retrieval_reranking_complete")
-
-    chunks = _hybrid_select_if_enabled(chunks, vector_top)
-
-    if profiler:
-        profiler.mark_phase("retrieval_hybrid_selection_complete")
+        profiler.mark_phase("retrieval_complete")
 
     return chunks
 
 
-def ask_question(question: str, retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None) -> dict:
+def ask_question(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft") -> dict:
     logger.info(f"Processing question: {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
 
     profiler = Profiler.get_current()
-    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filter)
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filters, metadata_filter_mode)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
     logger.info(f"Final context: {len(chunks)} chunks from up to {settings.max_citations} sources.")
@@ -181,12 +121,12 @@ def ask_question(question: str, retriever_top_k: int = 5, metadata_filter: Optio
     return {"answer": answer_text, "retrieved_chunks": chunks, "grounding": grounding}
 
 
-def ask_question_streaming(question: str, retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None):
+def ask_question_streaming(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft"):
     logger.info(f"Processing question (streaming): {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
 
     profiler = Profiler.get_current()
-    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filter)
+    chunks = _retrieve_and_select(sanitized_question, retriever_top_k, profiler, metadata_filters, metadata_filter_mode)
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 
@@ -243,7 +183,7 @@ def ask_question_streaming_without_retrieval(question: str):
                     yield delta.content
     return [], content_generator()
 
-async def ask_question_streaming_async(question: str, retriever_top_k: int = 5, metadata_filter: Optional[Dict[str, str]] = None):
+async def ask_question_streaming_async(question: str, retriever_top_k: int = 20, metadata_filters: Optional[List[Dict[str, Any]]] = None, metadata_filter_mode: str = "soft"):
     logger.info(f"Processing question (async streaming): {question}")
     sanitized_question = question.replace('"', '').replace("'", "").strip()
     
@@ -253,23 +193,18 @@ async def ask_question_streaming_async(question: str, retriever_top_k: int = 5, 
 
     registry = CapabilityRegistry()
     retriever = registry.get_instance("retriever")
-    chunks = await run_in_threadpool(retriever.retrieve, sanitized_question, top_k=retriever_top_k, metadata_filter=metadata_filter)
+    
+    # Use centralized retrieve method
+    chunks = await run_in_threadpool(
+        retriever.retrieve, 
+        query=sanitized_question, 
+        top_k=retriever_top_k, 
+        metadata_filters=metadata_filters,
+        metadata_filter_mode=metadata_filter_mode
+    )
 
     if profiler:
-        profiler.mark_phase("retrieval_vector_search_complete")
-
-    # Preserve original vector order for hybrid selection
-    vector_top = chunks[:]
-
-    chunks = await run_in_threadpool(_rerank_if_enabled, sanitized_question, chunks)
-
-    if profiler:
-        profiler.mark_phase("retrieval_reranking_complete")
-
-    chunks = _hybrid_select_if_enabled(chunks, vector_top)
-
-    if profiler:
-        profiler.mark_phase("retrieval_hybrid_selection_complete")
+        profiler.mark_phase("retrieval_complete")
 
     chunks = _limit_chunks_by_citations(chunks, settings.max_citations)
 

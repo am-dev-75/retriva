@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 
 class ChunkMetadata(BaseModel):
     doc_id: str
@@ -27,10 +28,16 @@ class ChunkMetadata(BaseModel):
     image_path: Optional[str] = None
     ingestion_timestamp: Optional[str] = None
     user_metadata: Optional[Dict[str, str]] = None
+    # --- Deduplication fields (v2, optional for backward compat) ---
+    content_hash: Optional[str] = None
+    content_hash_algorithm: Optional[str] = None
+    source_paths: Optional[List[str]] = None
+
 
 class Chunk(BaseModel):
     text: str
     metadata: ChunkMetadata
+
 
 class ImageContext(BaseModel):
     src: str
@@ -38,6 +45,7 @@ class ImageContext(BaseModel):
     caption: str
     surrounding_text: str
     vlm_description: str = ""
+
 
 class ParsedDocument(BaseModel):
     source_path: str
@@ -48,6 +56,32 @@ class ParsedDocument(BaseModel):
     chunks: List[Chunk] = Field(default_factory=list)
     images: List[ImageContext] = Field(default_factory=list)
     user_metadata: Optional[Dict[str, str]] = None
+    # --- Deduplication fields (v2, optional for backward compat) ---
+    doc_id: Optional[str] = None
+    content_hash: Optional[str] = None
+    source_paths: Optional[List[str]] = None
+
+
+class DocRecord(BaseModel):
+    """Per-KB document catalog entry — the source of truth for deduplication.
+
+    Stored in the DeduplicationStore keyed by (kb_id, content_hash).
+    """
+
+    doc_id: str
+    kb_id: str
+    content_hash: str
+    content_hash_algorithm: str = "sha256"
+    content_size: int
+    mime_type: Optional[str] = None
+    filename: str
+    source_paths: List[str] = Field(default_factory=list)
+    user_metadata: Optional[Dict[str, Any]] = None
+    chunk_count: int = 0
+    ingestion_status: str = "pending"
+    created_at: str
+    updated_at: str
+    metadata_updated_at: Optional[str] = None
 
 
 class CanonicalRecord(BaseModel):
